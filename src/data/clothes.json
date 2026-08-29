@@ -1,0 +1,60 @@
+{
+  "tops": [
+    {
+      "id": "top_01",
+      "name": "오버핏 셔츠",
+      "category": "top",
+      "thumbnail": null,
+      "layer": null,
+      "color": "#3d5a80",
+      "match": { "shoulderMin": 0, "shoulderMax": 45, "waistMin": 0, "waistMax": 100, "lowerMin": 0, "lowerMax": 100 }
+    },
+    {
+      "id": "top_02",
+      "name": "슬림 니트",
+      "category": "top",
+      "thumbnail": null,
+      "layer": null,
+      "color": "#6b4f3a",
+      "match": { "shoulderMin": 35, "shoulderMax": 75, "waistMin": 0, "waistMax": 55, "lowerMin": 0, "lowerMax": 100 }
+    },
+    {
+      "id": "top_03",
+      "name": "크롭 재킷",
+      "category": "top",
+      "thumbnail": null,
+      "layer": null,
+      "color": "#2f2f2f",
+      "match": { "shoulderMin": 60, "shoulderMax": 100, "waistMin": 40, "waistMax": 100, "lowerMin": 0, "lowerMax": 100 }
+    }
+  ],
+  "bottoms": [
+    {
+      "id": "bottom_01",
+      "name": "와이드 팬츠",
+      "category": "bottom",
+      "thumbnail": null,
+      "layer": null,
+      "color": "#4a5568",
+      "match": { "shoulderMin": 0, "shoulderMax": 100, "waistMin": 0, "waistMax": 100, "lowerMin": 0, "lowerMax": 45 }
+    },
+    {
+      "id": "bottom_02",
+      "name": "스트레이트 진",
+      "category": "bottom",
+      "thumbnail": null,
+      "layer": null,
+      "color": "#2c5282",
+      "match": { "shoulderMin": 0, "shoulderMax": 100, "waistMin": 0, "waistMax": 100, "lowerMin": 35, "lowerMax": 75 }
+    },
+    {
+      "id": "bottom_03",
+      "name": "슬림 슬랙스",
+      "category": "bottom",
+      "thumbnail": null,
+      "layer": null,
+      "color": "#1a202c",
+      "match": { "shoulderMin": 0, "shoulderMax": 100, "waistMin": 0, "waistMax": 100, "lowerMin": 65, "lowerMax": 100 }
+    }
+  ]
+}

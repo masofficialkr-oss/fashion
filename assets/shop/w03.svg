@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="600" viewBox="0 0 240 300">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#b87a80"/>
+      <stop offset="100%" stop-color="#e8b4b8"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="300" fill="url(#bg)"/>
+  <circle cx="200" cy="40" r="50" fill="rgba(255,255,255,0.08)"/>
+  <text x="16" y="28" fill="rgba(255,255,255,0.95)" font-family="Arial,sans-serif" font-size="12" font-weight="700">WOMEN</text>
+  <g transform="translate(0,8)"><path d="M75 80 L100 65 L140 65 L165 80 L175 210 H65 Z" fill="rgba(255,255,255,0.9)"/></g>
+  <rect x="14" y="250" width="212" height="36" rx="10" fill="rgba(0,0,0,0.35)"/>
+  <text x="120" y="273" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="13" font-weight="700">CARDIGAN</text>
+</svg>

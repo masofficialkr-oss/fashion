@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>LOOKFIT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Outfit:wght@450;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --phone: #f3f1ed; --surface: #fffcf8; --ink: #1c1917; --muted: #6b645c;
+      --accent: #0f766e; --accent-2: #b45309; --accent-soft: #d5efe9; --border: #e4ddd4;
+      --track: #e8e2da; --skin: #d8b49a; --hair: #3a2c28; --shadow: 0 16px 40px rgba(28,25,23,.14);
+      --canvas-w: 390px; --canvas-h: 780px; --tab-h: 76px; --status-h: 28px; --hud-h: 28px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #e6eaef; font-family: Outfit, system-ui, sans-serif; color: var(--ink); }
+    body { display: grid; place-items: center; min-height: 100%; padding: 16px; overflow: auto; }
+    .phone {
+      width: var(--canvas-w); height: var(--canvas-h); max-width: 100%; background: var(--phone);
+      border: 1px solid #cfc7bc; border-radius: 28px; overflow: hidden; display: flex; flex-direction: column;
+      position: relative; box-shadow: var(--shadow); flex-shrink: 0;
+    }
+    .status-bar {
+      height: var(--status-h); flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;
+      padding: 0 16px; font-size: .68rem; font-weight: 700; color: var(--muted); z-index: 5;
+    }
+    .hud-exp {
+      height: var(--hud-h); flex-shrink: 0; display: grid; grid-template-columns: auto 1fr auto;
+      gap: 8px; align-items: center; padding: 0 14px 4px; font-size: .62rem; font-weight: 800; color: var(--ink);
+    }
+    .hud-exp .exp-track { margin-top: 0; height: 6px; }
+    .screens { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+    .screen {
+      display: none; height: 100%; flex-direction: column; padding: 8px 14px 10px; overflow: hidden; gap: 6px;
+    }
+    .screen.active { display: flex; }
+    .screen-scroll {
+      flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 8px; -webkit-overflow-scrolling: touch;
+    }
+    .screen-scroll::-webkit-scrollbar { width: 4px; }
+    .screen-scroll::-webkit-scrollbar-thumb { background: #c5c0b8; border-radius: 99px; }
+    .brand { font-family: Fraunces, serif; font-size: 1.35rem; font-weight: 700; letter-spacing: .04em; line-height: 1.1; }
+    .nick { color: var(--muted); font-size: .8rem; margin-top: 1px; }
+    .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: .78rem; }
+    .exp-track { height: 8px; background: var(--track); border-radius: 999px; overflow: hidden; margin-top: 4px; }
+    .exp-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #14b8a6); border-radius: 999px; transition: width .35s; }
+    .section-title { font-family: Fraunces, serif; font-size: 1.15rem; font-weight: 700; flex-shrink: 0; }
+    .avatar-stage {
+      flex: 1; min-height: 0; display: grid; place-items: center; position: relative;
+      border-radius: 16px;
+      background:
+        linear-gradient(180deg, #c4b5a0 0%, #c4b5a0 18%, #ebe4d8 18%, #ebe4d8 62%, #d6cfc3 62%, #d6cfc3 100%);
+      overflow: hidden;
+    }
+    .avatar-stage::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        linear-gradient(90deg, rgba(90,74,58,.35) 0 10px, transparent 10px),
+        linear-gradient(90deg, transparent calc(100% - 10px), rgba(90,74,58,.35) 0),
+        radial-gradient(ellipse at 50% 0%, rgba(255,244,214,.45) 0%, transparent 42%),
+        repeating-linear-gradient(90deg, transparent 0 46px, rgba(120,100,80,.08) 46px 48px);
+    }
+    .avatar-stage::after {
+      content: ""; position: absolute; left: 14%; right: 14%; top: 10%; height: 36%;
+      border: 3px solid rgba(90,74,58,.22); border-radius: 4px; z-index: 0;
+      background: linear-gradient(180deg, #9db8c9 0%, #c5d6e2 100%);
+      pointer-events: none;
+    }
+    .avatar-stage > * { position: relative; z-index: 1; }
+    .outfit-chips {
+      position: absolute; right: 8px; bottom: 8px; z-index: 3; display: flex; flex-direction: column; gap: 4px;
+    }
+    .outfit-chips img {
+      width: 36px; height: 44px; object-fit: cover; object-position: top center;
+      border-radius: 8px; border: 2px solid #fff; background: #eee;
+    }
+    .avatar-frame {
+      width: 200px; height: 250px; max-height: 92%; position: relative; border-radius: 0;
+      overflow: visible; background: transparent; border: 0;
+      animation: chibiBob 2.4s ease-in-out infinite;
+    }
+    .avatar-frame.svg-sm {
+      width: 86px; height: 104px; border-radius: 0; animation: none;
+    }
+    .avatar-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+    @keyframes chibiBob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    .avatar-frame.pop { animation: chibiPop .45s ease; }
+    @keyframes chibiPop {
+      0% { transform: scale(1); }
+      40% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+    .speech-bubble {
+      position: absolute; top: 8px; left: 10px; right: 10px; z-index: 2;
+      background: #fffaf3; border: 2px solid #E2B48A; border-radius: 16px;
+      padding: 8px 10px; font-size: .72rem; font-weight: 700; line-height: 1.35; color: #8B5E3C;
+      box-shadow: 0 4px 0 rgba(226,180,138,.35);
+    }
+    .speech-bubble::after {
+      content: ""; position: absolute; left: 28px; bottom: -7px; width: 12px; height: 12px;
+      background: #fffaf3; border-right: 2px solid #E2B48A; border-bottom: 2px solid #E2B48A;
+      transform: rotate(45deg);
+    }
+    .speech-bubble em { font-style: normal; color: #0f766e; }
+    .equip-meta { text-align: center; font-size: .72rem; color: var(--muted); flex-shrink: 0; }
+    .home-top { flex-shrink: 0; padding: 2px 0 4px; }
+    .level-pill { display: inline-flex; background: var(--ink); color: #fff; border-radius: 999px; padding: 4px 9px; font-size: .7rem; font-weight: 800; }
+    .level-pill em { font-style: normal; color: #fbbf24; }
+    .home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-shrink: 0; }
+    .home-actions button, .field input, .field select, .cta, .chip, .tab, .wish-btn, .item-card, .shop-card, .qty button { font: inherit; }
+    .home-actions button {
+      border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 10px;
+      font-size: .76rem; font-weight: 700; color: var(--ink); cursor: pointer; text-align: left;
+    }
+    .home-actions button span { display: block; color: var(--muted); font-size: .66rem; font-weight: 500; margin-top: 2px; }
+    .field label { display: block; font-size: .68rem; font-weight: 700; color: var(--muted); margin-bottom: 3px; }
+    .field input, .field select {
+      width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: #fff; color: var(--ink); font-size: .85rem;
+    }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .slider-panel, .card-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px; flex-shrink: 0; }
+    .card-box { display: grid; gap: 8px; }
+    .slider-panel { display: grid; gap: 6px; }
+    .slider-row label { display: flex; justify-content: space-between; font-size: .78rem; font-weight: 700; }
+    .slider-row label span { color: var(--accent); }
+    .slider-row input[type=range] { width: 100%; height: 22px; accent-color: var(--accent); }
+    .cta {
+      border: 0; background: var(--accent); color: #fff; font-weight: 700; font-size: .84rem;
+      border-radius: 12px; padding: 11px 12px; cursor: pointer; width: 100%; flex-shrink: 0;
+    }
+    .cta:disabled { opacity: .45; cursor: not-allowed; }
+    .cta.secondary { background: var(--surface); color: var(--accent); border: 1px solid var(--accent); }
+    .cta.warn { background: var(--accent-2); }
+    .cta.ghost { background: #fff; color: #b91c1c; border: 1px solid #fecaca; position: relative; z-index: 2; }
+    .settings-card .cta { position: relative; z-index: 2; }
+    .upload-box {
+      border: 1.5px dashed var(--border); border-radius: 12px; background: #fff; padding: 8px; cursor: pointer;
+      display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center;
+    }
+    .upload-box .upload-copy { font-size: .72rem; color: var(--muted); line-height: 1.3; }
+    .upload-box .upload-copy b { display: block; color: var(--ink); font-size: .8rem; margin-bottom: 2px; }
+    #photoPreview { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; display: block; background: #eee; margin: 0; }
+    .upload-box input { display: none; }
+    .ai-steps { font-size: .7rem; color: var(--muted); line-height: 1.3; min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ai-steps b { color: var(--accent); }
+    .result-card {
+      background: linear-gradient(135deg, #1c1917, #0f766e); color: #fff; border-radius: 12px; padding: 10px 12px;
+      flex-shrink: 0; max-height: 88px; overflow: hidden;
+    }
+    .result-card h3 { font-family: Fraunces, serif; font-size: .95rem; margin-bottom: 4px; }
+    .result-card ul { display: none; }
+    .fit-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .fit-tags span { background: rgba(255,255,255,.15); border-radius: 999px; padding: 3px 8px; font-size: .66rem; font-weight: 700; }
+    .body-mid { display: grid; grid-template-columns: 80px 1fr; gap: 8px; align-items: start; flex-shrink: 0; }
+    .search-wrap {
+      display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 8px 10px; flex-shrink: 0;
+    }
+    .search-wrap input { flex: 1; border: 0; outline: none; background: transparent; font-size: .85rem; }
+    .chip-row, .sort-row, .recent-rail { display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0; padding-bottom: 2px; scrollbar-width: none; }
+    .chip-row::-webkit-scrollbar, .sort-row::-webkit-scrollbar, .recent-rail::-webkit-scrollbar { display: none; }
+    .chip {
+      flex: 0 0 auto; border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+      border-radius: 999px; padding: 5px 10px; font-size: .68rem; font-weight: 700; cursor: pointer;
+    }
+    .chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .explore-grid, .grid-items { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 12px; }
+    .shop-card, .item-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+      cursor: pointer; text-align: left; padding: 0; position: relative;
+    }
+    .item-card { padding: 8px; }
+    .shop-card .visual { height: 176px; position: relative; background: #ece8e2; overflow: hidden; }
+    .shop-card .visual img {
+      width: 100%; height: 100%; object-fit: cover; object-position: center 18%;
+      display: block;
+    }
+    .shop-card .visual img.pos-top { object-position: top center; }
+    .shop-card .visual img.pos-upper { object-position: center 10%; }
+    .thumb img.pos-top, .recent-card img.pos-top { object-position: top center; }
+    .thumb img.pos-upper, .recent-card img.pos-upper { object-position: center 10%; }
+    .shop-card .body { padding: 8px; }
+    .thumb { height: 88px; border-radius: 8px; margin-bottom: 6px; overflow: hidden; background: #ece8e2; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: center 18%; display: block; }
+    .badge { position: absolute; top: 6px; left: 6px; background: rgba(28,25,23,.78); color: #fff; font-size: .58rem; font-weight: 700; padding: 2px 6px; border-radius: 999px; z-index: 2; }
+    .badge.sale { background: #b45309; }
+    .badge.rank { left: auto; right: 6px; background: var(--accent); }
+    .wish-btn {
+      position: absolute; bottom: 6px; right: 6px; z-index: 3; width: 28px; height: 28px; border-radius: 999px; border: 0;
+      background: rgba(255,255,255,.92); cursor: pointer;
+    }
+    .wish-btn.on { color: #e11d48; }
+    .item-name { font-size: .78rem; font-weight: 700; }
+    .item-meta { font-size: .66rem; color: var(--muted); margin-top: 2px; }
+    .price { margin-top: 2px; font-size: .74rem; font-weight: 800; color: var(--accent-2); }
+    .price-row { display: flex; gap: 6px; align-items: baseline; margin-top: 2px; }
+    .price-row .origin { font-size: .64rem; color: #a8a29e; text-decoration: line-through; }
+    .fit-bar { margin-top: 4px; height: 4px; background: var(--track); border-radius: 99px; overflow: hidden; }
+    .fit-bar > i { display: block; height: 100%; background: var(--accent); }
+    .fit-label { font-size: .62rem; color: var(--accent); margin-top: 3px; font-weight: 800; }
+    .fit-range { font-size: .6rem; color: var(--muted); margin-top: 2px; font-weight: 700; line-height: 1.3; }
+    .empty { min-height: 120px; display: grid; place-items: center; text-align: center; color: var(--muted); font-size: .82rem; line-height: 1.45; padding: 16px; }
+    .section-mini { font-size: .66rem; font-weight: 800; color: var(--muted); flex-shrink: 0; }
+    .recent-card { flex: 0 0 64px; border: 0; background: transparent; padding: 0; cursor: pointer; text-align: left; }
+    .recent-card img { width: 64px; height: 76px; object-fit: cover; object-position: center 18%; border-radius: 8px; display: block; background: #ece8e2; }
+    .recent-card span { display: block; font-size: .58rem; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cart-fab, .wish-fab { position: absolute; right: 12px; z-index: 25; border: 0; cursor: pointer; box-shadow: 0 8px 18px rgba(28,25,23,.22); }
+    .cart-fab {
+      bottom: calc(var(--tab-h) + 12px); width: 52px; height: 52px; border-radius: 16px; background: var(--ink); color: #fff;
+      font-weight: 800; font-size: .68rem; display: grid; place-items: center;
+    }
+    .wish-fab {
+      bottom: calc(var(--tab-h) + 72px); width: 44px; height: 44px; border-radius: 14px; background: #fff; color: #e11d48;
+      border: 1px solid var(--border); font-size: .95rem; font-weight: 800;
+    }
+    .cart-fab .count, .wish-fab .count {
+      position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px;
+      background: var(--accent-2); color: #fff; font-size: .6rem; display: grid; place-items: center; font-weight: 800;
+    }
+    .wish-fab .count { background: var(--ink); }
+    .sheet-backdrop {
+      position: absolute; inset: 0; background: rgba(28,25,23,.42); z-index: 40; display: none; align-items: flex-end; justify-content: center;
+    }
+    .sheet-backdrop.show { display: flex; }
+    .sheet { width: 100%; max-height: 70%; background: var(--surface); border-radius: 20px 20px 0 0; padding: 12px 14px 18px; overflow: auto; }
+    .sheet-handle { width: 40px; height: 4px; border-radius: 99px; background: #d6d0c8; margin: 0 auto 10px; }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .sheet-head h3 { font-family: Fraunces, serif; font-size: 1.05rem; }
+    .cart-line { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .cart-swatch { width: 52px; height: 52px; border-radius: 8px; background-size: cover; background-position: center top; }
+    .qty { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; }
+    .qty button { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--border); background: #fff; font-weight: 800; cursor: pointer; }
+    .cart-total { display: flex; justify-content: space-between; margin: 10px 0; font-weight: 800; }
+    .cart-total span:last-child { color: var(--accent-2); }
+    /* Full-screen product detail (covers entire phone canvas) */
+    .modal-backdrop {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      background: #fff; z-index: 999; display: none; align-items: stretch; justify-content: stretch;
+      padding: 0;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal.detail-sheet {
+      width: 100%; height: 100%; max-width: none; max-height: none;
+      border-radius: 0; overflow: hidden; display: flex; flex-direction: column;
+      background: var(--surface); position: relative;
+      transform: none;
+    }
+    .detail-topbar {
+      flex-shrink: 0; height: 48px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px 0 14px; border-bottom: 1px solid var(--border); background: #fff; z-index: 5;
+    }
+    .detail-topbar strong { font-size: .82rem; font-weight: 800; letter-spacing: .02em; }
+    .detail-topbar .close-x {
+      position: static; width: 36px; height: 36px; border-radius: 999px; border: 1px solid var(--border);
+      background: #f5f5f5; font-size: 1.15rem; font-weight: 800; cursor: pointer; line-height: 1;
+    }
+    .detail-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .modal-hero {
+      height: auto; position: relative; background-color: #f5f5f5; overflow: hidden; flex-shrink: 0;
+    }
+    .modal-hero img {
+      width: 100%; height: min(52vh, 380px); object-fit: contain; object-position: center center;
+      display: block; background-color: #f5f5f5;
+    }
+    .detail-head { padding: 12px 14px 8px; border-bottom: 1px solid var(--border); }
+    .detail-head h3 { font-family: Fraunces, serif; font-size: 1.12rem; margin-bottom: 4px; }
+    .detail-sections { padding: 10px 14px 96px; display: grid; gap: 10px; }
+    .detail-block {
+      background: #faf7f2; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+    }
+    .detail-block h4 {
+      font-size: .72rem; font-weight: 800; color: var(--muted); margin-bottom: 6px; letter-spacing: .02em;
+    }
+    .detail-block p { font-size: .78rem; line-height: 1.45; color: var(--ink); }
+    .detail-block .expert {
+      background: #fff; border-left: 3px solid var(--accent); padding: 8px 10px; border-radius: 0 8px 8px 0;
+      font-size: .76rem; line-height: 1.45; font-weight: 600;
+    }
+    .detail-foot {
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      padding: 10px 14px 12px;
+      background: rgba(255,252,248,.98); border-top: 1px solid var(--border);
+    }
+    .detail-foot .cta { margin: 0; padding: 12px 10px; font-size: .8rem; }
+    .detail-foot .cta:disabled {
+      background: #d6d3d1; color: #78716c; border: 0; opacity: 1; cursor: not-allowed;
+    }
+    .photo-flash {
+      position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none !important;
+      z-index: 1190; transition: opacity .12s ease; visibility: hidden;
+    }
+    .photo-flash.on { opacity: 1; visibility: visible; }
+    .stage-tools {
+      position: absolute; top: 10px; right: 10px; z-index: 4; display: flex; gap: 6px;
+    }
+    .stage-tool {
+      width: 36px; height: 36px; border-radius: 12px; border: 1px solid rgba(90,74,58,.25);
+      background: rgba(255,252,248,.92); color: #5c4a3a; font-size: .95rem; font-weight: 800;
+      cursor: pointer; display: grid; place-items: center;
+    }
+    .home-quest-btn {
+      align-self: center; border: 2px solid #E2B48A; background: #fffaf3; color: #8B5E3C;
+      border-radius: 999px; padding: 6px 12px; font-size: .72rem; font-weight: 800; cursor: pointer;
+      margin-top: 2px;
+    }
+    .quest-backdrop {
+      position: absolute; inset: 0; background: rgba(28,25,23,.42); z-index: 1180;
+      display: none; place-items: center; padding: 18px; pointer-events: auto;
+    }
+    .quest-backdrop.show { display: grid; }
+    .fab-hidden { display: none !important; visibility: hidden !important; pointer-events: none !important; }
+    .screen[data-screen="settings"] {
+      overflow-y: auto; padding-bottom: 28px; position: relative; z-index: 35;
+    }
+    .screen[data-screen="settings"] .settings-card {
+      position: relative; z-index: 36;
+    }
+    #btnReset {
+      position: relative; z-index: 40; pointer-events: auto !important;
+      min-height: 48px; touch-action: manipulation;
+    }
+    .quest-modal {
+      width: 100%; max-width: 300px; background: #fff; border-radius: 16px; overflow: hidden;
+      position: relative;
+    }
+    .quest-modal header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border-bottom: 1px solid var(--border);
+    }
+    .quest-modal header strong { font-family: Fraunces, serif; font-size: 1rem; }
+    .quest-modal .close-x { position: static; width: 32px; height: 32px; background: #f5f5f5; border: 1px solid var(--border); }
+    .quest-list { padding: 10px 14px 14px; display: grid; gap: 8px; }
+    .quest-item {
+      display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start;
+      background: #faf7f2; border-radius: 10px; padding: 10px; font-size: .74rem;
+    }
+    .quest-item .mark { font-weight: 800; color: var(--accent); min-width: 18px; }
+    .quest-item.done .mark { color: #0f766e; }
+    .quest-item .exp { font-weight: 800; color: var(--accent-2); white-space: nowrap; }
+    .quest-item .title { font-weight: 700; color: var(--ink); }
+    .quest-item .meta { color: var(--muted); margin-top: 2px; font-size: .68rem; }
+    /* Non-blocking EXP toast — above fullscreen product modal (999) */
+    .exp-gain {
+      position: absolute; left: 50%; top: 56px; transform: translateX(-50%) translateY(-6px);
+      width: min(88%, 260px); z-index: 1205; opacity: 0; visibility: hidden;
+      pointer-events: none !important; transition: opacity .28s ease, transform .28s ease, visibility .28s;
+      background: transparent; padding: 0;
+    }
+    .exp-gain.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+    .exp-gain-card {
+      width: 100%; background: rgba(28,25,23,.92); border-radius: 14px; overflow: hidden; text-align: center;
+      pointer-events: none !important; color: #fff;
+    }
+    .exp-gain-card img { width: 100%; height: 96px; object-fit: cover; object-position: top center; display: block; background: #ece8e2; }
+    .exp-gain-card strong { display: block; font-family: Fraunces, serif; font-size: .9rem; padding: 10px 12px 2px; color: #5eead4; }
+    .exp-gain-card span { display: block; color: rgba(255,255,255,.78); font-size: .68rem; font-weight: 700; padding: 0 12px 12px; }
+    .modal-fit { background: var(--accent-soft); border-radius: 10px; padding: 8px 10px; margin: 8px 0 0; font-size: .74rem; font-weight: 700; color: var(--accent); }
+    .close-x { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 999px; border: 0; background: rgba(255,255,255,.92); font-weight: 800; cursor: pointer; z-index: 2; }
+    .settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: grid; gap: 8px; flex-shrink: 0; }
+    .stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .stat-box { background: #f6f2ec; border-radius: 10px; padding: 10px; text-align: center; font-size: .72rem; }
+    .stat-box b { display: block; font-size: 1.05rem; margin-top: 2px; }
+    .tabbar {
+      height: var(--tab-h); flex-shrink: 0; display: grid; grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid var(--border); background: #fffcf8; padding: 8px 4px 12px; z-index: 30;
+    }
+    .tab {
+      border: 0; background: transparent; font-size: .72rem; font-weight: 700; color: var(--muted);
+      cursor: pointer; display: grid; gap: 4px; place-items: center; padding: 6px 2px;
+    }
+    .tab span:first-child { font-size: 1.15rem; line-height: 1; }
+    .tab.active { color: var(--accent); }
+    .toast {
+      position: absolute; left: 50%; top: 48px; transform: translateX(-50%) translateY(-8px); background: var(--ink); color: #fff;
+      padding: 8px 12px; border-radius: 999px; font-size: .72rem; font-weight: 700; opacity: 0; pointer-events: none;
+      transition: .25s; z-index: 1200; max-width: 88%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .levelup { position: absolute; inset: 0; background: rgba(28,25,23,.48); display: none; place-items: center; z-index: 1210; }
+    .levelup.show { display: grid; }
+    .levelup-card { background: #fff; border-radius: 16px; padding: 18px 24px; text-align: center; }
+    .levelup-card strong { display: block; font-family: Fraunces, serif; font-size: 1.3rem; margin-bottom: 4px; }
+    .worn-ribbon { position: absolute; top: 6px; right: 6px; z-index: 2; background: var(--accent); color: #fff; font-size: .58rem; font-weight: 800; padding: 2px 6px; border-radius: 999px; }
+    .item-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+    .screen-foot { flex-shrink: 0; display: grid; gap: 6px; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="app">
+    <div class="status-bar"><span>LOOKFIT</span><span id="clock">22:50</span></div>
+    <div class="hud-exp">
+      <span id="hudLv">Lv.1</span>
+      <div class="exp-track"><div class="exp-fill" id="hudExpFill"></div></div>
+      <span id="hudExp">0/100</span>
+    </div>
+
+    <div class="screens">
+      <section class="screen active" data-screen="home">
+        <div class="home-top">
+          <div class="brand">LOOKFIT</div>
+          <div class="nick" id="nickname">스타일러</div>
+          <div class="meta"><span class="level-pill">Lv. <em id="levelLabelNum">1</em></span><span id="expLabel">EXP 0/100</span></div>
+          <div class="exp-track"><div class="exp-fill" id="expFill"></div></div>
+        </div>
+        <div class="avatar-stage">
+          <div class="stage-tools">
+            <button type="button" class="stage-tool" id="btnDailyQuest" title="일일 퀘스트" aria-label="일일 퀘스트">Q</button>
+            <button type="button" class="stage-tool" id="btnPhotoSave" title="사진 저장" aria-label="사진 저장">▣</button>
+          </div>
+          <div class="speech-bubble" id="homeBubble">상점 안에서 맞는 <em>핏</em>을 골라보자!</div>
+          <div class="avatar-frame" id="avatarHome"></div>
+          <div class="outfit-chips" id="outfitChips"></div>
+        </div>
+        <div class="equip-meta" id="equipMeta">상의: 미착용 · 하의: 미착용</div>
+        <div class="home-actions">
+          <button type="button" id="quickBody">체형 분석<span>사진·키·몸무게</span></button>
+          <button type="button" id="quickExplore">탐색<span>실사 룩북 10컷</span></button>
+        </div>
+        <button type="button" class="home-quest-btn" id="dailyQuest">일일 퀘스트 · 미션 확인</button>
+      </section>
+
+      <section class="screen" data-screen="body">
+        <div class="section-title">체형 분석</div>
+        <div class="card-box">
+          <div class="field-row">
+            <div class="field"><label>성별</label>
+              <select id="genderSelect"><option value="M">남성</option><option value="W">여성</option></select>
+            </div>
+            <div class="field"><label>키(cm)</label><input id="heightInput" type="number" min="140" max="210" value="170" /></div>
+            <div class="field"><label>몸무게</label><input id="weightInput" type="number" min="35" max="150" value="65" /></div>
+          </div>
+          <label class="upload-box" id="uploadBox">
+            <div style="width:64px;height:64px;position:relative">
+              <div id="uploadPlaceholder" style="width:64px;height:64px;border-radius:8px;background:#eee;display:grid;place-items:center;font-size:.7rem;color:#888">사진</div>
+              <img id="photoPreview" alt="" style="display:none;position:absolute;inset:0;width:64px;height:64px;object-fit:cover;border-radius:8px" />
+            </div>
+            <div class="upload-copy"><b>사진 선택</b>정면 전신/상반신</div>
+            <input id="photoInput" type="file" accept="image/*" />
+          </label>
+          <div class="ai-steps" id="aiSteps">대기 중</div>
+          <button class="cta" id="btnAnalyzeAI">AI 분석 시작</button>
+        </div>
+        <div class="result-card" id="aiResult" style="display:none">
+          <h3 id="bodyTypeTitle">체형 결과</h3>
+          <ul id="bodyTypeList"></ul>
+          <div class="fit-tags" id="fitTags"></div>
+        </div>
+        <div class="body-mid">
+          <div class="avatar-frame svg-sm" id="avatarBody"></div>
+          <div class="slider-panel">
+            <div class="slider-row"><label>어깨 <span id="vShoulder">50</span></label><input type="range" min="0" max="100" value="50" id="shoulder" /></div>
+            <div class="slider-row"><label>허리 <span id="vWaist">50</span></label><input type="range" min="0" max="100" value="50" id="waist" /></div>
+            <div class="slider-row"><label>하체 <span id="vLower">50</span></label><input type="range" min="0" max="100" value="50" id="lower" /></div>
+          </div>
+        </div>
+        <button class="cta secondary" id="btnRecommend">옷 추천받기</button>
+      </section>
+
+      <section class="screen" data-screen="closet">
+        <div class="section-title">옷장</div>
+        <div class="item-meta" id="closetSub" style="flex-shrink:0">내 옷장 · 구매/담은 아이템</div>
+        <div class="screen-scroll" id="closetScroll">
+          <div id="closetEmpty" class="empty">옷장이 비어 있습니다.<br/>탐색에서 ‘옷장에 담기’로 추가하세요.</div>
+          <div id="closetGrid" class="grid-items" style="display:none"></div>
+        </div>
+        <div class="screen-foot">
+          <button class="cta" id="btnWear" disabled>아이템을 선택하세요</button>
+          <button class="cta secondary" id="btnGoHome" style="display:none">메인에서 확인</button>
+        </div>
+      </section>
+
+      <section class="screen" data-screen="explore">
+        <div class="section-title">탐색</div>
+        <div class="search-wrap"><span>⌕</span><input id="searchInput" type="search" placeholder="검색" /></div>
+        <div class="sort-row" id="sortRow"></div>
+        <div class="chip-row" id="chipRow"></div>
+        <div class="section-mini" id="recentTitle" style="display:none">최근 본</div>
+        <div class="recent-rail" id="recentRail" style="display:none"></div>
+        <div class="screen-scroll" id="exploreScroll">
+          <div class="explore-grid" id="exploreGrid"></div>
+        </div>
+      </section>
+
+      <section class="screen" data-screen="settings">
+        <div class="section-title">설정</div>
+        <div class="settings-card">
+          <div class="field"><label>닉네임</label><input id="nickInput" type="text" maxlength="12" /></div>
+          <button class="cta" id="btnSaveNick">닉네임 저장</button>
+        </div>
+        <div class="settings-card">
+          <div class="stat-row">
+            <div class="stat-box">레벨<b id="setLevel">1</b></div>
+            <div class="stat-box">장바구니<b id="setCart">0</b></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-box">EXP<b id="setExp">0</b></div>
+            <div class="stat-box">찜<b id="setWish">0</b></div>
+          </div>
+          <button class="cta secondary" id="btnClearCart" type="button">장바구니 비우기</button>
+          <button class="cta ghost" id="btnReset" type="button">데이터 초기화</button>
+        </div>
+      </section>
+    </div>
+
+    <button class="wish-fab" id="wishFab" type="button">♥<span class="count" id="wishCount">0</span></button>
+    <button class="cart-fab" id="cartFab" type="button">장바구니<span class="count" id="cartCount">0</span></button>
+
+    <div class="modal-backdrop" id="productModal">
+      <div class="modal detail-sheet">
+        <div class="detail-topbar">
+          <strong>상품 상세</strong>
+          <button class="close-x" id="modalClose" type="button" aria-label="닫기">×</button>
+        </div>
+        <div class="detail-scroll">
+          <div class="modal-hero">
+            <img id="modalImg" alt="" />
+          </div>
+          <div class="detail-head">
+            <h3 id="modalName">-</h3>
+            <div class="item-meta" id="modalMeta">-</div>
+            <div class="price-row"><span class="price" id="modalPrice">₩0</span><span class="origin" id="modalOrigin" style="display:none"></span></div>
+            <div class="modal-fit" id="modalFit">체형 적합도 -</div>
+          </div>
+          <div class="detail-sections">
+            <div class="detail-block">
+              <h4>상품 설명</h4>
+              <p id="modalDesc">-</p>
+            </div>
+            <div class="detail-block">
+              <h4>소재 정보</h4>
+              <p id="modalMaterial">-</p>
+            </div>
+            <div class="detail-block">
+              <h4>모델 사이즈</h4>
+              <p id="modalModel">175cm / 60kg · 착용 사이즈 M</p>
+            </div>
+            <div class="detail-block">
+              <h4>패션 전문가 코멘트</h4>
+              <div class="expert" id="modalExpert">체형의 단점을 보완해주는 실루엣입니다.</div>
+            </div>
+            <p class="item-meta" id="modalMatch"></p>
+            <button class="cta secondary" id="btnToggleWish" type="button" style="width:100%">찜하기</button>
+          </div>
+        </div>
+        <div class="detail-foot">
+          <button class="cta secondary" id="btnAddCart" type="button">장바구니 담기</button>
+          <button class="cta" id="btnToCloset" type="button">옷장에 담기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet-backdrop" id="cartSheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head"><h3>장바구니</h3><button class="chip" id="cartClose" type="button">닫기</button></div>
+        <div id="cartList"></div>
+        <div class="cart-total"><span>합계</span><span id="cartTotal">₩0</span></div>
+        <button class="cta warn" id="btnCheckout">결제 시뮬레이션</button>
+        <div id="payDone" style="display:none;text-align:center;padding:10px;color:var(--muted);font-size:.8rem"><strong style="display:block;color:var(--ink);font-family:Fraunces,serif;font-size:1.1rem;margin-bottom:4px">결제 완료</strong>실제 청구 없음</div>
+      </div>
+    </div>
+
+    <nav class="tabbar">
+      <button class="tab active" data-tab="home" type="button"><span>⌂</span><span>메인</span></button>
+      <button class="tab" data-tab="body" type="button"><span>◎</span><span>체형</span></button>
+      <button class="tab" data-tab="closet" type="button"><span>▦</span><span>옷장</span></button>
+      <button class="tab" data-tab="explore" type="button"><span>⌕</span><span>탐색</span></button>
+      <button class="tab" data-tab="settings" type="button"><span>⚙</span><span>설정</span></button>
+    </nav>
+
+    <!-- Floating feedback layer: always above product modal (z 999) -->
+    <div class="photo-flash" id="photoFlash" aria-hidden="true"></div>
+    <div class="quest-backdrop" id="questModal" role="dialog" aria-modal="true">
+      <div class="quest-modal">
+        <header>
+          <strong>일일 퀘스트</strong>
+          <button type="button" class="close-x" id="questClose" aria-label="닫기">×</button>
+        </header>
+        <div class="quest-list">
+          <div class="quest-item done">
+            <span class="mark">[v]</span>
+            <div><div class="title">매일 앱 출석하기</div><div class="meta">1/1 완료</div></div>
+            <span class="exp">10 EXP</span>
+          </div>
+          <div class="quest-item done">
+            <span class="mark">[v]</span>
+            <div><div class="title">옷장에서 새로운 코디 입어보기</div><div class="meta">1/1 완료</div></div>
+            <span class="exp">25 EXP</span>
+          </div>
+          <div class="quest-item">
+            <span class="mark">[ ]</span>
+            <div><div class="title">탐색 탭에서 옷 구경하기</div><div class="meta">2/5 진행중</div></div>
+            <span class="exp">진행중</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
+    <div class="exp-gain" id="expGain" aria-live="polite">
+      <div class="exp-gain-card">
+        <img id="expGainImg" alt="" />
+        <strong>EXP +20 획득!</strong>
+        <span id="expGainName"></span>
+      </div>
+    </div>
+    <div class="levelup" id="levelup"><div class="levelup-card"><strong id="levelupText">LEVEL UP</strong><span style="color:var(--muted);font-size:.8rem">캐릭터 성장</span></div></div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.22.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.22.0/dist/tf-converter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.22.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+  <script>
+    const EXP_PER_WEAR = 25, EXP_PER_EXPLORE = 10, EXP_TO_NEXT = 100, STORAGE_KEY = 'lookfit-demo-v5';
+    const EXPLORE_EXP_CHANCE = 0.3, EXPLORE_EXP_DAILY_MAX = 5;
+
+    const FIT_ITEMS = [
+      { id: 'top_01', name: '오버핏 셔츠', category: 'top', color: '#3d5a80', gender: 'M', fitTags: ['오버핏','스트레이트'], match: { shoulderMin: 0, shoulderMax: 50, waistMin: 0, waistMax: 100, lowerMin: 0, lowerMax: 100 } },
+      { id: 'top_02', name: '슬림 니트', category: 'top', color: '#6b4f3a', gender: 'M', fitTags: ['슬림핏'], match: { shoulderMin: 35, shoulderMax: 80, waistMin: 0, waistMax: 55, lowerMin: 0, lowerMax: 100 } },
+      { id: 'top_03', name: '크롭 재킷', category: 'top', color: '#2f2f2f', gender: 'M', fitTags: ['크롭','구조핏'], match: { shoulderMin: 55, shoulderMax: 100, waistMin: 30, waistMax: 100, lowerMin: 0, lowerMax: 100 } },
+      { id: 'bottom_01', name: '와이드 팬츠', category: 'bottom', color: '#4a5568', gender: 'M', fitTags: ['와이드'], match: { shoulderMin: 0, shoulderMax: 100, waistMin: 0, waistMax: 100, lowerMin: 0, lowerMax: 45 } },
+      { id: 'bottom_02', name: '스트레이트 진', category: 'bottom', color: '#2c5282', gender: 'M', fitTags: ['스트레이트'], match: { shoulderMin: 0, shoulderMax: 100, waistMin: 0, waistMax: 100, lowerMin: 30, lowerMax: 75 } },
+      { id: 'bottom_03', name: '슬림 슬랙스', category: 'bottom', color: '#1a202c', gender: 'M', fitTags: ['슬림핏'], match: { shoulderMin: 0, shoulderMax: 100, waistMin: 0, waistMax: 100, lowerMin: 60, lowerMax: 100 } },
+      { id: 'wtop_01', name: '크롭 탑', category: 'top', color: '#9f7aea', gender: 'W', fitTags: ['크롭'], match: { shoulderMin: 40, shoulderMax: 100, waistMin: 0, waistMax: 60, lowerMin: 0, lowerMax: 100 } },
+      { id: 'wtop_02', name: '블라우스', category: 'top', color: '#c4a484', gender: 'W', fitTags: ['스트레이트','세미핏'], match: { shoulderMin: 0, shoulderMax: 70, waistMin: 0, waistMax: 100, lowerMin: 0, lowerMax: 100 } },
+      { id: 'wbot_01', name: 'A라인 스커트', category: 'bottom', color: '#7c5c6e', gender: 'W', fitTags: ['A라인'], match: { shoulderMin: 0, shoulderMax: 100, waistMin: 0, waistMax: 100, lowerMin: 0, lowerMax: 55 } },
+      { id: 'wbot_02', name: '스트레이트 진', category: 'bottom', color: '#2b6cb0', gender: 'W', fitTags: ['스트레이트'], match: { shoulderMin: 0, shoulderMax: 100, waistMin: 0, waistMax: 100, lowerMin: 35, lowerMax: 80 } },
+    ];
+
+    const CATALOG = [
+      { id: 'm01', name: '오버핏 셔츠', brand: 'FRAME LAB', gender: 'M', category: 'top', tag: '캐주얼', tpo: ['데일리'], color: '#3d5a80', price: 39000, discount: 15, rank: 2, rising: true, fitId: 'top_01', ideal: { shoulder: 30, waist: 45, lower: 50 }, fitStyle: '오버핏', image: './assets/shop/item_1.png', desc: '어깨를 부드럽게 덮는 여유핏 셔츠.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '체형의 단점을 보완해주는 실루엣입니다.', thumbPos: '' },
+      { id: 'm02', name: '슬림 니트', brand: 'NOIR KNIT', gender: 'M', category: 'top', tag: '니트', tpo: ['출근','데이트'], color: '#6b4f3a', price: 45000, discount: 0, rank: 5, rising: false, fitId: 'top_02', ideal: { shoulder: 55, waist: 35, lower: 50 }, fitStyle: '슬림핏', image: './assets/shop/item_2.png', desc: '허리 라인을 정리하는 슬림 니트.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '어깨 라인을 정리해 비율을 안정적으로 보이게 합니다.', thumbPos: '' },
+      { id: 'm03', name: '크롭 재킷', brand: 'CITY EDGE', gender: 'M', category: 'top', tag: '아우터', tpo: ['데일리','데이트'], color: '#2f2f2f', price: 79000, discount: 20, rank: 1, rising: true, fitId: 'top_03', ideal: { shoulder: 80, waist: 60, lower: 50 }, fitStyle: '크롭', image: './assets/shop/item_3.png', desc: '짧은 기장으로 하체 밸런스를 맞춤.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '하체 볼륨을 분산시켜 전체 밸런스를 맞춰 줍니다.', thumbPos: 'upper' },
+      { id: 'm04', name: '와이드 팬츠', brand: 'DRAPE CO', gender: 'M', category: 'bottom', tag: '팬츠', tpo: ['데일리','여행'], color: '#4a5568', price: 52000, discount: 10, rank: 4, rising: false, fitId: 'bottom_01', ideal: { shoulder: 50, waist: 50, lower: 25 }, fitStyle: '와이드', image: './assets/shop/item_4.png', desc: '하체 실루엣을 정돈하는 와이드.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '세로 실루엣으로 다리가 길어 보이는 효과가 있습니다.', thumbPos: '' },
+      { id: 'm05', name: '스트레이트 진', brand: 'BLUE LINE', gender: 'M', category: 'bottom', tag: '데님', tpo: ['데일리','출근'], color: '#2c5282', price: 59000, discount: 0, rank: 3, rising: true, fitId: 'bottom_02', ideal: { shoulder: 50, waist: 50, lower: 55 }, fitStyle: '스트레이트', image: './assets/shop/item_5.png', desc: '가장 무난한 스트레이트 핏 데님.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '체형의 단점을 보완해주는 실루엣입니다.', thumbPos: '' },
+      { id: 'm06', name: '슬림 슬랙스', brand: 'FORMAL DAY', gender: 'M', category: 'bottom', tag: '슬랙스', tpo: ['출근'], color: '#1a202c', price: 48000, discount: 5, rank: 8, rising: false, fitId: 'bottom_03', ideal: { shoulder: 50, waist: 45, lower: 80 }, fitStyle: '슬림핏', image: './assets/shop/item_6.png', desc: '출근·미팅용 슬림 슬랙스.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '어깨 라인을 정리해 비율을 안정적으로 보이게 합니다.', thumbPos: '' },
+      { id: 'm07', name: '린넨 셔츠', brand: 'AIRY', gender: 'M', category: 'top', tag: '캐주얼', tpo: ['여행','데일리'], color: '#8a9a7b', price: 42000, discount: 25, rank: 6, rising: true, fitId: 'top_01', ideal: { shoulder: 40, waist: 40, lower: 50 }, fitStyle: '레귤러', image: './assets/shop/item_7.png', desc: '통풍 좋은 린넨 레귤러 셔츠.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '하체 볼륨을 분산시켜 전체 밸런스를 맞춰 줍니다.', thumbPos: 'top' },
+      { id: 'm08', name: '후드 집업', brand: 'SOFT MOVE', gender: 'M', category: 'top', tag: '캐주얼', tpo: ['데일리'], color: '#5b6e8c', price: 55000, discount: 0, rank: 9, rising: false, fitId: 'top_02', ideal: { shoulder: 60, waist: 50, lower: 50 }, fitStyle: '루즈핏', image: './assets/shop/item_8.png', desc: '활동성 좋은 루즈 후드.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '세로 실루엣으로 다리가 길어 보이는 효과가 있습니다.', thumbPos: 'top' },
+      { id: 'm09', name: '카고 팬츠', brand: 'UTIL', gender: 'M', category: 'bottom', tag: '팬츠', tpo: ['데일리','여행'], color: '#5c584e', price: 61000, discount: 18, rank: 10, rising: true, fitId: 'bottom_01', ideal: { shoulder: 50, waist: 55, lower: 45 }, fitStyle: '유틸리티', image: './assets/shop/item_9.png', desc: '스트릿 무드 카고.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '체형의 단점을 보완해주는 실루엣입니다.', thumbPos: '' },
+      { id: 'm10', name: '울 코트', brand: 'WINTER ROW', gender: 'M', category: 'top', tag: '아우터', tpo: ['출근','데이트'], color: '#4a3f35', price: 129000, discount: 30, rank: 7, rising: false, fitId: 'top_03', ideal: { shoulder: 70, waist: 55, lower: 50 }, fitStyle: '롱실루엣', image: './assets/shop/item_10.png', desc: '미디 기장 울 코트.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '어깨 라인을 정리해 비율을 안정적으로 보이게 합니다.', thumbPos: 'upper' },
+      { id: 'w01', name: '실크 블라우스', brand: 'SOFT ROW', gender: 'W', category: 'top', tag: '블라우스', tpo: ['출근','데이트'], color: '#c4a484', price: 68000, discount: 10, rank: 2, rising: true, fitId: 'wtop_02', ideal: { shoulder: 45, waist: 40, lower: 50 }, fitStyle: '세미핏', image: './assets/shop/item_1.png', desc: '은은한 광택의 세미핏 블라우스.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '하체 볼륨을 분산시켜 전체 밸런스를 맞춰 줍니다.', thumbPos: '' },
+      { id: 'w02', name: '크롭 탑', brand: 'CUT LINE', gender: 'W', category: 'top', tag: '크롭', tpo: ['데이트','데일리'], color: '#9f7aea', price: 32000, discount: 0, rank: 1, rising: true, fitId: 'wtop_01', ideal: { shoulder: 70, waist: 35, lower: 55 }, fitStyle: '크롭', image: './assets/shop/item_2.png', desc: '하이웨스트와 잘 맞는 크롭.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '세로 실루엣으로 다리가 길어 보이는 효과가 있습니다.', thumbPos: '' },
+      { id: 'w03', name: '숏 가디건', brand: 'PINK KNIT', gender: 'W', category: 'top', tag: '니트', tpo: ['데일리'], color: '#e8b4b8', price: 49000, discount: 12, rank: 5, rising: false, fitId: 'wtop_02', ideal: { shoulder: 50, waist: 45, lower: 50 }, fitStyle: '크롭', image: './assets/shop/item_3.png', desc: '가벼운 크롭 가디건.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '체형의 단점을 보완해주는 실루엣입니다.', thumbPos: 'upper' },
+      { id: 'w04', name: 'A라인 스커트', brand: 'PLEAT LAB', gender: 'W', category: 'bottom', tag: '스커트', tpo: ['출근','데이트'], color: '#7c5c6e', price: 46000, discount: 8, rank: 3, rising: true, fitId: 'wbot_01', ideal: { shoulder: 50, waist: 40, lower: 30 }, fitStyle: 'A라인', image: './assets/shop/item_4.png', desc: '하체를 정돈하는 A라인.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '어깨 라인을 정리해 비율을 안정적으로 보이게 합니다.', thumbPos: '' },
+      { id: 'w05', name: '와이드 트라우저', brand: 'FLOW', gender: 'W', category: 'bottom', tag: '팬츠', tpo: ['출근','데일리'], color: '#718096', price: 58000, discount: 15, rank: 4, rising: false, fitId: 'wbot_01', ideal: { shoulder: 50, waist: 50, lower: 25 }, fitStyle: '와이드', image: './assets/shop/item_5.png', desc: '드레이프 와이드 팬츠.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '하체 볼륨을 분산시켜 전체 밸런스를 맞춰 줍니다.', thumbPos: '' },
+      { id: 'w06', name: '슬림 진', brand: 'DENIM MUSE', gender: 'W', category: 'bottom', tag: '데님', tpo: ['데일리'], color: '#2b6cb0', price: 54000, discount: 0, rank: 6, rising: false, fitId: 'wbot_02', ideal: { shoulder: 50, waist: 45, lower: 70 }, fitStyle: '슬림핏', image: './assets/shop/item_6.png', desc: '다리가 길어 보이는 슬림 진.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '세로 실루엣으로 다리가 길어 보이는 효과가 있습니다.', thumbPos: '' },
+      { id: 'w07', name: '랩 원피스', brand: 'WRAP', gender: 'W', category: 'top', tag: '원피스', tpo: ['데이트'], color: '#c53030', price: 72000, discount: 20, rank: 8, rising: true, fitId: 'wtop_02', ideal: { shoulder: 45, waist: 40, lower: 45 }, fitStyle: '랩실루엣', image: './assets/shop/item_7.png', desc: '허리를 잡아주는 랩 원피스.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '체형의 단점을 보완해주는 실루엣입니다.', thumbPos: 'top' },
+      { id: 'w08', name: '테일러 자켓', brand: 'OFFICE', gender: 'W', category: 'top', tag: '아우터', tpo: ['출근'], color: '#2d3748', price: 98000, discount: 18, rank: 7, rising: false, fitId: 'wtop_01', ideal: { shoulder: 75, waist: 50, lower: 50 }, fitStyle: '구조핏', image: './assets/shop/item_8.png', desc: '어깨선을 살리는 테일러드.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '어깨 라인을 정리해 비율을 안정적으로 보이게 합니다.', thumbPos: 'top' },
+      { id: 'w09', name: '플리츠 스커트', brand: 'SUN PLEAT', gender: 'W', category: 'bottom', tag: '스커트', tpo: ['데일리','데이트'], color: '#d69e2e', price: 43000, discount: 5, rank: 9, rising: false, fitId: 'wbot_01', ideal: { shoulder: 50, waist: 40, lower: 35 }, fitStyle: '플리츠', image: './assets/shop/item_9.png', desc: '잔잔한 플리츠 스커트.', material: '데님/트윌 혼방 · 세탁기 가능(약사이클)', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '하체 볼륨을 분산시켜 전체 밸런스를 맞춰 줍니다.', thumbPos: '' },
+      { id: 'w10', name: '숏 패딩', brand: 'PUFF', gender: 'W', category: 'top', tag: '아우터', tpo: ['데일리','여행'], color: '#4fd1c5', price: 89000, discount: 22, rank: 10, rising: true, fitId: 'wtop_01', ideal: { shoulder: 65, waist: 55, lower: 50 }, fitStyle: '크롭', image: './assets/shop/item_10.png', desc: '크롭 기장 숏 패딩.', material: '면 65% · 폴리에스터 35% · 드라이클리닝 권장', modelInfo: '175cm / 60kg · 착용 사이즈 M', expert: '세로 실루엣으로 다리가 길어 보이는 효과가 있습니다.', thumbPos: 'upper' },
+    ];
+
+    const CHIPS = ['전체', '남성', '여성', '상의', '하의', '아우터', '데님', '출근', '데이트', '데일리', '찜'];
+    const SORTS = [
+      { id: 'recommend', label: '추천' }, { id: 'best', label: '베스트' }, { id: 'rising', label: '급상승' },
+      { id: 'sale', label: '세일' }, { id: 'fit', label: '체형순' },
+    ];
+
+    let state = {
+      nickname: '스타일러', level: 1, exp: 0,
+      gender: 'M', height: 170, weight: 65,
+      body: { shoulder: 50, waist: 50, lower: 50 },
+      analysis: null,
+      recommendedIds: [], ownedIds: [], equipped: { topId: null, bottomId: null },
+      wornCatalog: { topId: null, bottomId: null },
+      selectedId: null, selectedKind: 'fit',
+      cart: {}, wishlist: [], recentIds: [],
+      exploreFilter: '전체', exploreSort: 'recommend', searchQuery: '', activeProductId: null,
+      photoDataUrl: null,
+      exploreExpDate: '', exploreExpCount: 0,
+    };
+
+    let poseDetector = null;
+    let photoBitmap = null;
+
+    const won = (n) => '₩' + Number(n).toLocaleString('ko-KR');
+    const salePrice = (item) => item.discount ? Math.round(item.price * (100 - item.discount) / 100) : item.price;
+    const cartCount = () => Object.values(state.cart).reduce((a, b) => a + b, 0);
+    const cartTotal = () => Object.entries(state.cart).reduce((s, [id, q]) => { const it = CATALOG.find((c) => c.id === id); return s + (it ? salePrice(it) * q : 0); }, 0);
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const p = JSON.parse(raw);
+        state = {
+          ...state, ...p,
+          body: { ...state.body, ...(p.body || {}) },
+          equipped: { ...state.equipped, ...(p.equipped || {}) },
+          cart: p.cart && typeof p.cart === 'object' ? p.cart : {},
+          wishlist: Array.isArray(p.wishlist) ? p.wishlist : [],
+          recentIds: Array.isArray(p.recentIds) ? p.recentIds : [],
+          recommendedIds: Array.isArray(p.recommendedIds) ? p.recommendedIds : [],
+          ownedIds: Array.isArray(p.ownedIds) ? p.ownedIds : [],
+          wornCatalog: { topId: null, bottomId: null, ...(p.wornCatalog || {}) },
+          analysis: p.analysis || null,
+          exploreExpDate: p.exploreExpDate || '',
+          exploreExpCount: Number(p.exploreExpCount) || 0,
+        };
+      } catch (_) {}
+    }
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, photoDataUrl: null })); }
+
+    function fitScore(item) {
+      const d = Math.abs(item.ideal.shoulder - state.body.shoulder) + Math.abs(item.ideal.waist - state.body.waist) + Math.abs(item.ideal.lower - state.body.lower);
+      return Math.max(0, Math.min(100, Math.round(100 - d / 1.8)));
+    }
+    function matchRangeLabel(item) {
+      const fit = FIT_ITEMS.find((f) => f.id === item.fitId);
+      if (!fit) return `${item.fitStyle} 맞춤`;
+      const m = fit.match;
+      if (item.category === 'bottom') return `하체 ${m.lowerMin}~${m.lowerMax} 맞춤 핏`;
+      return `어깨 ${m.shoulderMin}~${m.shoulderMax} 맞춤 핏`;
+    }
+    function todayKey() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function syncExploreDaily() {
+      const key = todayKey();
+      if (state.exploreExpDate !== key) {
+        state.exploreExpDate = key;
+        state.exploreExpCount = 0;
+      }
+    }
+    function grantExp(amount) {
+      let nextExp = state.exp + amount;
+      let leveled = false;
+      while (nextExp >= EXP_TO_NEXT) {
+        nextExp -= EXP_TO_NEXT;
+        state.level += 1;
+        leveled = true;
+      }
+      state.exp = nextExp;
+      save();
+      renderHeader();
+      return leveled;
+    }
+    function showExploreReward(item) {
+      const img = document.getElementById('expGainImg');
+      const name = document.getElementById('expGainName');
+      const el = document.getElementById('expGain');
+      const title = el.querySelector('strong');
+      img.src = item.image;
+      img.alt = item.name;
+      if (title) title.textContent = '옷장 탐색 보상! EXP +' + EXP_PER_EXPLORE + ' 획득';
+      name.textContent = item.name + ' · 오늘 ' + state.exploreExpCount + '/' + EXPLORE_EXP_DAILY_MAX;
+      el.classList.add('show');
+      clearTimeout(showExploreReward._t);
+      showExploreReward._t = setTimeout(() => el.classList.remove('show'), 1600);
+    }
+    function tryExploreExpReward(item) {
+      syncExploreDaily();
+      if (state.exploreExpCount >= EXPLORE_EXP_DAILY_MAX) {
+        showToast('오늘 탐색 EXP 한도 소진 (' + EXPLORE_EXP_DAILY_MAX + '회)');
+        return;
+      }
+      if (Math.random() > EXPLORE_EXP_CHANCE) return;
+      state.exploreExpCount += 1;
+      const leveled = grantExp(EXP_PER_EXPLORE);
+      showExploreReward(item);
+      if (leveled) {
+        clearTimeout(tryExploreExpReward._lv);
+        tryExploreExpReward._lv = setTimeout(() => showLevelUp(state.level), 1700);
+      }
+    }
+    function posClass(item) {
+      if (!item || !item.thumbPos) return '';
+      return item.thumbPos === 'top' ? 'pos-top' : (item.thumbPos === 'upper' ? 'pos-upper' : '');
+    }
+    function addToOwned(catalogId) {
+      if (!state.ownedIds.includes(catalogId)) state.ownedIds.push(catalogId);
+      save();
+      renderCloset();
+    }
+    function fitText(score) {
+      if (score >= 85) return '내 체형에 매우 잘 맞아요';
+      if (score >= 70) return '체형 적합도 양호';
+      if (score >= 55) return '무난한 핏 · 피팅 권장';
+      return '핏 차이가 있을 수 있어요';
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg; el.classList.add('show');
+      clearTimeout(showToast._t); showToast._t = setTimeout(() => el.classList.remove('show'), 1700);
+    }
+    function openQuestModal() { document.getElementById('questModal').classList.add('show'); }
+    function closeQuestModal() { document.getElementById('questModal').classList.remove('show'); }
+    function showLevelUp(level) {
+      document.getElementById('levelupText').textContent = 'LEVEL ' + level;
+      document.getElementById('levelup').classList.add('show');
+      setTimeout(() => document.getElementById('levelup').classList.remove('show'), 1200);
+    }
+    function setAiSteps(html) { document.getElementById('aiSteps').innerHTML = html; }
+
+    function avatarSVG(body, equipped, opts = {}) {
+      const compact = !!opts.compact;
+      const top = FIT_ITEMS.find((c) => c.id === equipped.topId);
+      const bottom = FIT_ITEMS.find((c) => c.id === equipped.bottomId);
+      const catTop = CATALOG.find((c) => c.id === state.wornCatalog.topId);
+      const catBtm = CATALOG.find((c) => c.id === state.wornCatalog.bottomId);
+      const topColor = top ? (catTop ? catTop.color : top.color) : '#F4D4A8';
+      const btmColor = bottom ? (catBtm ? catBtm.color : bottom.color) : '#B8D4E8';
+      const shoulderBoost = (body.shoulder - 50) * 0.08;
+      const hipBoost = (body.lower - 50) * 0.08;
+      const uid = compact ? 'c' : 'h';
+      const fur = '#F0A35A';
+      const furDeep = '#D9833A';
+      const outline = '#B86A2E';
+      const cream = '#FFF1DC';
+      const vb = '0 0 200 230';
+      return `<svg viewBox="${vb}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <radialGradient id="fur${uid}" cx="40%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#FFD19A"/><stop offset="100%" stop-color="${furDeep}"/>
+          </radialGradient>
+        </defs>
+        <ellipse cx="100" cy="216" rx="34" ry="6" fill="rgba(90,74,58,.2)"/>
+        <!-- feet -->
+        <ellipse cx="82" cy="204" rx="13" ry="7" fill="${furDeep}" stroke="${outline}" stroke-width="2"/>
+        <ellipse cx="118" cy="204" rx="13" ry="7" fill="${furDeep}" stroke="${outline}" stroke-width="2"/>
+        <!-- pants / skirt -->
+        <path d="M72 ${168 - hipBoost / 4} Q100 158 128 ${168 - hipBoost / 4} L132 198 Q100 206 68 198 Z"
+          fill="${btmColor}" stroke="${outline}" stroke-width="2.2"/>
+        <!-- torso clothes -->
+        <path d="M70 ${118 - shoulderBoost / 5} Q100 108 130 ${118 - shoulderBoost / 5} L126 170 Q100 178 74 170 Z"
+          fill="${topColor}" stroke="${outline}" stroke-width="2.4"/>
+        <ellipse cx="100" cy="128" rx="10" ry="4" fill="#fff" opacity=".25"/>
+        <!-- arms -->
+        <ellipse cx="${58 - shoulderBoost / 4}" cy="140" rx="11" ry="16" fill="url(#fur${uid})" stroke="${outline}" stroke-width="2" transform="rotate(-18 ${58 - shoulderBoost / 4} 140)"/>
+        <ellipse cx="${142 + shoulderBoost / 4}" cy="140" rx="11" ry="16" fill="url(#fur${uid})" stroke="${outline}" stroke-width="2" transform="rotate(18 ${142 + shoulderBoost / 4} 140)"/>
+        <!-- head -->
+        <ellipse cx="68" cy="62" rx="16" ry="20" fill="url(#fur${uid})" stroke="${outline}" stroke-width="2.2"/>
+        <ellipse cx="132" cy="62" rx="16" ry="20" fill="url(#fur${uid})" stroke="${outline}" stroke-width="2.2"/>
+        <ellipse cx="68" cy="66" rx="8" ry="10" fill="#FFB7C5"/>
+        <ellipse cx="132" cy="66" rx="8" ry="10" fill="#FFB7C5"/>
+        <circle cx="100" cy="88" r="44" fill="url(#fur${uid})" stroke="${outline}" stroke-width="2.6"/>
+        <ellipse cx="100" cy="102" rx="22" ry="16" fill="${cream}"/>
+        <!-- eyes -->
+        <path d="M78 86 Q86 78 94 86" fill="none" stroke="#5C3A1E" stroke-width="3.2" stroke-linecap="round"/>
+        <path d="M106 86 Q114 78 122 86" fill="none" stroke="#5C3A1E" stroke-width="3.2" stroke-linecap="round"/>
+        <circle cx="74" cy="80" r="1.5" fill="#5C3A1E" opacity=".4"/>
+        <circle cx="126" cy="80" r="1.5" fill="#5C3A1E" opacity=".4"/>
+        <!-- nose / mouth -->
+        <ellipse cx="100" cy="98" rx="5" ry="3.5" fill="#5C3A1E"/>
+        <path d="M100 101 Q100 108 94 110" fill="none" stroke="#5C3A1E" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M100 101 Q100 108 106 110" fill="none" stroke="#5C3A1E" stroke-width="1.8" stroke-linecap="round"/>
+        <ellipse cx="82" cy="104" rx="7" ry="4" fill="#FFB7C5" opacity=".55"/>
+        <ellipse cx="118" cy="104" rx="7" ry="4" fill="#FFB7C5" opacity=".55"/>
+        ${!compact ? '<text x="100" y="22" text-anchor="middle" fill="#B86A2E" font-size="11" font-family="Outfit,sans-serif" font-weight="800" opacity=".75">LOOKKO</text>' : ''}
+      </svg>`;
+    }
+
+    function updateHomeBubble() {
+      const el = document.getElementById('homeBubble');
+      if (!el) return;
+      if (state.analysis && state.analysis.fits && state.analysis.fits.length) {
+        el.innerHTML = `오늘의 추천은 <em>${state.analysis.fits[0]}</em>!`;
+      } else if (state.equipped.topId || state.equipped.bottomId) {
+        el.innerHTML = `이 코디, <em>레벨업</em> 각이야!`;
+      } else {
+        el.innerHTML = `상점 안에서 맞는 <em>핏</em>을 골라보자!`;
+      }
+    }
+
+    function classifyBody({ shoulder, waist, lower, height, weight, shHipRatio }) {
+      const bmi = weight / Math.pow(height / 100, 2);
+      let type = '스트레이트';
+      let reasons = [];
+      let fits = [];
+
+      if (shHipRatio != null) {
+        if (shHipRatio >= 1.12) { type = '인버티드 트라이앵글'; reasons.push(`어깨/골반 비율 ${shHipRatio.toFixed(2)} · 상체가 넓은 편`); }
+        else if (shHipRatio <= 0.92) { type = '페어(하체강조)'; reasons.push(`어깨/골반 비율 ${shHipRatio.toFixed(2)} · 하체가 넓은 편`); }
+        else { type = '스트레이트'; reasons.push(`어깨/골반 비율 ${shHipRatio.toFixed(2)} · 상·하체 균형`); }
+      } else {
+        if (shoulder - lower >= 18) { type = '인버티드 트라이앵글'; reasons.push('어깨 수치가 하체보다 큼'); }
+        else if (lower - shoulder >= 18) { type = '페어(하체강조)'; reasons.push('하체 수치가 어깨보다 큼'); }
+        else { type = '스트레이트'; reasons.push('어깨·하체 수치가 비교적 균형'); }
+      }
+
+      reasons.push(`BMI ${bmi.toFixed(1)} (키 ${height}cm / ${weight}kg)`);
+      if (bmi < 18.5) reasons.push('슬림 체중대 · 볼륨감 있는 레이어 추천');
+      else if (bmi >= 25) reasons.push('여유 실루엣·세로선 강조 추천');
+
+      if (type === '스트레이트') {
+        fits = ['스트레이트 핏', '레귤러 셔츠', '세미핏 니트', '스트레이트 진'];
+        if (waist <= 45) fits.push('벨트 포인트');
+      } else if (type === '인버티드 트라이앵글') {
+        fits = ['크롭 재킷', '구조적 어깨 아우터', '와이드/스트레이트 하의', '하이웨스트'];
+      } else {
+        fits = ['A라인 스커트/팬츠', '오버핏·루즈 상의', '어두운 톤 하의', '크롭보다 힙 커버 기장'];
+      }
+      if (shoulder >= 70) fits.push('크롭 기장 상의');
+      if (lower <= 40) fits.push('와이드 팬츠');
+      if (waist <= 40 && shoulder >= 55) fits.push('슬림 니트');
+
+      // map to sliders already set; ensure consistency
+      return { type, reasons, fits, bmi: Number(bmi.toFixed(1)), shHipRatio };
+    }
+
+    async function ensureDetector() {
+      if (poseDetector) return poseDetector;
+      if (!window.poseDetection || !window.tf) throw new Error('TF not loaded');
+      await tf.setBackend('webgl');
+      await tf.ready();
+      poseDetector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+      });
+      return poseDetector;
+    }
+
+    function dist(a, b) {
+      if (!a || !b) return null;
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    async function analyzeWithPose(imgEl) {
+      const detector = await ensureDetector();
+      const poses = await detector.estimatePoses(imgEl, { maxPoses: 1, flipHorizontal: false });
+      if (!poses.length || !poses[0].keypoints) throw new Error('no pose');
+      const kp = Object.fromEntries(poses[0].keypoints.map((k) => [k.name, k]));
+      const ls = kp.left_shoulder, rs = kp.right_shoulder, lh = kp.left_hip, rh = kp.right_hip;
+      const shoulderW = dist(ls, rs);
+      const hipW = dist(lh, rh);
+      if (!shoulderW || !hipW || shoulderW < 1 || hipW < 1) throw new Error('low confidence');
+      const ratio = shoulderW / hipW;
+      // normalize to 0-100-ish body sliders
+      const shoulder = Math.max(5, Math.min(95, Math.round((ratio - 0.75) / 0.6 * 100)));
+      const lower = Math.max(5, Math.min(95, Math.round((1.25 - ratio) / 0.6 * 100)));
+      const waist = Math.max(15, Math.min(85, Math.round((shoulder + lower) / 2 - 5)));
+      return { shoulder, waist, lower, shHipRatio: ratio, engine: 'MoveNet' };
+    }
+
+    function analyzeHeuristic(height, weight, gender) {
+      const bmi = weight / Math.pow(height / 100, 2);
+      let shoulder = gender === 'M' ? 58 : 52;
+      let waist = 50;
+      let lower = gender === 'M' ? 52 : 56;
+      if (bmi < 18.5) { waist -= 12; lower -= 8; shoulder -= 4; }
+      else if (bmi >= 25) { waist += 14; lower += 10; shoulder += 6; }
+      else if (bmi >= 23) { waist += 6; lower += 4; }
+      if (height >= 178) shoulder += 6;
+      if (height <= 160) { shoulder -= 4; lower += 4; }
+      return {
+        shoulder: Math.max(5, Math.min(95, shoulder)),
+        waist: Math.max(5, Math.min(95, waist)),
+        lower: Math.max(5, Math.min(95, lower)),
+        shHipRatio: shoulder / Math.max(lower, 1) * 0.55 + 0.75,
+        engine: 'Heuristic(BMI+키)',
+      };
+    }
+
+    async function runAIAnalysis() {
+      const height = Number(document.getElementById('heightInput').value) || 170;
+      const weight = Number(document.getElementById('weightInput').value) || 65;
+      const gender = document.getElementById('genderSelect').value;
+      state.height = height; state.weight = weight; state.gender = gender;
+
+      const btn = document.getElementById('btnAnalyzeAI');
+      btn.disabled = true;
+      setAiSteps('<b>1/4</b> 입력값 확인 중…');
+
+      let metrics;
+      try {
+        await new Promise((r) => setTimeout(r, 250));
+        setAiSteps('<b>2/4</b> AI 모델 준비 (MoveNet)…');
+        const preview = document.getElementById('photoPreview');
+        if (state.photoDataUrl && preview.src) {
+          try {
+            metrics = await analyzeWithPose(preview);
+            setAiSteps(`<b>3/4</b> 포즈 키포인트 추출 완료 · engine=${metrics.engine}`);
+          } catch (err) {
+            setAiSteps('<b>3/4</b> 포즈 감지 실패 → 키/몸무게 휴리스틱으로 보정');
+            metrics = analyzeHeuristic(height, weight, gender);
+          }
+        } else {
+          setAiSteps('<b>3/4</b> 사진 없음 → 키/몸무게 기반 휴리스틱 분석');
+          metrics = analyzeHeuristic(height, weight, gender);
+        }
+      } catch (e) {
+        setAiSteps('<b>3/4</b> 모델 로드 실패 → 휴리스틱 폴백');
+        metrics = analyzeHeuristic(height, weight, gender);
+      }
+
+      state.body = { shoulder: metrics.shoulder, waist: metrics.waist, lower: metrics.lower };
+      const result = classifyBody({
+        ...state.body, height, weight, shHipRatio: metrics.shHipRatio,
+      });
+      result.engine = metrics.engine;
+      state.analysis = result;
+      save();
+
+      setAiSteps(`<b>4/4 완료</b> ${result.type} · ${result.engine}`);
+      renderAiResult();
+      renderSliders();
+      renderAvatars();
+      // auto recommend for current gender
+      recommendFromAnalysis();
+      btn.disabled = false;
+      showToast('AI 체형 분석 완료');
+    }
+
+    function renderAiResult() {
+      const box = document.getElementById('aiResult');
+      if (!state.analysis) { box.style.display = 'none'; return; }
+      box.style.display = 'block';
+      document.getElementById('bodyTypeTitle').textContent = `체형: ${state.analysis.type}`;
+      document.getElementById('bodyTypeList').innerHTML = state.analysis.reasons.map((r) => `<li>${r}</li>`).join('');
+      document.getElementById('fitTags').innerHTML = state.analysis.fits.map((f) => `<span>${f}</span>`).join('');
+    }
+
+    function recommendFromAnalysis() {
+      const gender = state.gender;
+      const fits = (state.analysis && state.analysis.fits) || [];
+      let list = FIT_ITEMS.filter((i) => i.gender === gender);
+      // prefer items whose fitTags intersect analysis fits
+      list = list.filter((item) => {
+        const m = item.match;
+        const bodyOk =
+          state.body.shoulder >= m.shoulderMin && state.body.shoulder <= m.shoulderMax &&
+          state.body.waist >= m.waistMin && state.body.waist <= m.waistMax &&
+          state.body.lower >= m.lowerMin && state.body.lower <= m.lowerMax;
+        const tagOk = item.fitTags.some((t) => fits.some((f) => f.includes(t) || t.includes(f.replace(/\s/g, ''))));
+        return bodyOk || tagOk;
+      });
+      if (list.length < 2) list = FIT_ITEMS.filter((i) => i.gender === gender);
+      // ensure one top + one bottom if possible
+      const tops = list.filter((i) => i.category === 'top');
+      const bottoms = list.filter((i) => i.category === 'bottom');
+      const picked = [...tops.slice(0, 2), ...bottoms.slice(0, 2)];
+      state.recommendedIds = (picked.length ? picked : list).map((i) => i.id);
+      state.selectedId = null;
+      save();
+      renderCloset();
+      document.getElementById('closetSub').textContent = state.analysis
+        ? `${state.analysis.type} 기준 · ${state.analysis.fits.slice(0, 3).join(' · ')}`
+        : '체형/핏 분석 기반 추천 아이템';
+    }
+
+    function filteredCatalog() {
+      const q = state.searchQuery.trim().toLowerCase();
+      let list = CATALOG.filter((item) => {
+        const f = state.exploreFilter;
+        const byChip =
+          f === '전체' ||
+          (f === '남성' && item.gender === 'M') ||
+          (f === '여성' && item.gender === 'W') ||
+          (f === '상의' && item.category === 'top') ||
+          (f === '하의' && item.category === 'bottom') ||
+          (f === '찜' && state.wishlist.includes(item.id)) ||
+          item.tag === f || (item.tpo || []).includes(f);
+        const bySearch = !q || [item.name, item.brand, item.tag, item.fitStyle, item.desc, ...(item.tpo || [])].join(' ').toLowerCase().includes(q);
+        return byChip && bySearch;
+      });
+      if (state.exploreSort === 'best') list.sort((a, b) => a.rank - b.rank);
+      else if (state.exploreSort === 'rising') list = list.filter((i) => i.rising).sort((a, b) => a.rank - b.rank);
+      else if (state.exploreSort === 'sale') list = list.filter((i) => i.discount > 0).sort((a, b) => b.discount - a.discount);
+      else if (state.exploreSort === 'fit') list.sort((a, b) => fitScore(b) - fitScore(a));
+      else list.sort((a, b) => (fitScore(b) - a.rank) - (fitScore(a) - b.rank));
+      return list;
+    }
+
+    function renderHeader() {
+      document.getElementById('nickname').textContent = state.nickname;
+      document.getElementById('levelLabelNum').textContent = String(state.level);
+      document.getElementById('expLabel').textContent = `EXP ${state.exp}/${EXP_TO_NEXT}`;
+      document.getElementById('expFill').style.width = `${(state.exp / EXP_TO_NEXT) * 100}%`;
+      document.getElementById('hudLv').textContent = `Lv.${state.level}`;
+      document.getElementById('hudExp').textContent = `${state.exp}/${EXP_TO_NEXT}`;
+      document.getElementById('hudExpFill').style.width = `${(state.exp / EXP_TO_NEXT) * 100}%`;
+      const top = FIT_ITEMS.find((c) => c.id === state.equipped.topId);
+      const bottom = FIT_ITEMS.find((c) => c.id === state.equipped.bottomId);
+      document.getElementById('equipMeta').textContent = `상의: ${top ? top.name : '미착용'} · 하의: ${bottom ? bottom.name : '미착용'}`;
+      document.getElementById('cartCount').textContent = String(cartCount());
+      document.getElementById('wishCount').textContent = String(state.wishlist.length);
+      document.getElementById('setLevel').textContent = String(state.level);
+      document.getElementById('setCart').textContent = String(cartCount());
+      document.getElementById('setExp').textContent = String(state.exp);
+      document.getElementById('setWish').textContent = String(state.wishlist.length);
+      const nick = document.getElementById('nickInput');
+      if (document.activeElement !== nick) nick.value = state.nickname;
+      document.getElementById('genderSelect').value = state.gender;
+      document.getElementById('heightInput').value = state.height;
+      document.getElementById('weightInput').value = state.weight;
+      updateHomeBubble();
+    }
+
+    function renderSliders() {
+      ['shoulder', 'waist', 'lower'].forEach((key) => {
+        document.getElementById(key).value = state.body[key];
+        document.getElementById('v' + key[0].toUpperCase() + key.slice(1)).textContent = state.body[key];
+      });
+    }
+    function renderAvatars() {
+      document.getElementById('avatarHome').innerHTML = avatarSVG(state.body, state.equipped, { gender: state.gender });
+      document.getElementById('avatarBody').innerHTML = avatarSVG(state.body, state.equipped, { gender: state.gender, compact: true });
+      const chips = document.getElementById('outfitChips');
+      if (chips) {
+        const imgs = [];
+        const t = CATALOG.find((c) => c.id === (state.wornCatalog && state.wornCatalog.topId));
+        const b = CATALOG.find((c) => c.id === (state.wornCatalog && state.wornCatalog.bottomId));
+        if (t) imgs.push('<img src="' + t.image + '" class="' + posClass(t) + '" alt="' + t.name + '">');
+        if (b) imgs.push('<img src="' + b.image + '" class="' + posClass(b) + '" alt="' + b.name + '">');
+        chips.innerHTML = imgs.join('');
+      }
+      updateHomeBubble();
+    }
+
+    function popAvatar() {
+      const el = document.getElementById('avatarHome');
+      if (!el) return;
+      el.classList.remove('pop');
+      void el.offsetWidth;
+      el.classList.add('pop');
+    }
+
+    function renderCloset() {
+      const owned = (state.ownedIds || []).map((id) => CATALOG.find((c) => c.id === id)).filter(Boolean);
+      const recFits = (state.recommendedIds || []).map((id) => FIT_ITEMS.find((c) => c.id === id)).filter(Boolean);
+      const empty = document.getElementById('closetEmpty');
+      const grid = document.getElementById('closetGrid');
+      const btn = document.getElementById('btnWear');
+      const go = document.getElementById('btnGoHome');
+      const sub = document.getElementById('closetSub');
+      if (sub) sub.textContent = '내 옷장 ' + owned.length + ' · 추천 ' + recFits.length;
+
+      const cards = [];
+      owned.forEach((item) => {
+        const fit = FIT_ITEMS.find((f) => f.id === item.fitId);
+        const worn = fit && ((fit.category === 'top' && state.equipped.topId === fit.id && state.wornCatalog.topId === item.id) ||
+          (fit.category === 'bottom' && state.equipped.bottomId === fit.id && state.wornCatalog.bottomId === item.id));
+        const selected = state.selectedKind === 'owned' && state.selectedId === item.id;
+        cards.push('<button class="item-card ' + (selected ? 'selected' : '') + '" data-kind="owned" data-id="' + item.id + '">' +
+          (worn ? '<span class="worn-ribbon">착용중</span>' : '') +
+          '<div class="thumb"><img class="' + posClass(item) + '" src="' + item.image + '" alt=""></div>' +
+          '<div class="item-name">' + item.name + '</div>' +
+          '<div class="item-meta">내 옷장 · ' + item.fitStyle + '</div></button>');
+      });
+      recFits.forEach((item) => {
+        const shop = CATALOG.find((c) => c.fitId === item.id);
+        const worn = (item.category === 'top' && state.equipped.topId === item.id) || (item.category === 'bottom' && state.equipped.bottomId === item.id);
+        const selected = state.selectedKind === 'fit' && state.selectedId === item.id;
+        cards.push('<button class="item-card ' + (selected ? 'selected' : '') + '" data-kind="fit" data-id="' + item.id + '">' +
+          (worn ? '<span class="worn-ribbon">착용중</span>' : '') +
+          '<div class="thumb">' + (shop ? '<img class="' + posClass(shop) + '" src="' + shop.image + '" alt="">' : '<div style="height:100%;background:' + item.color + '"></div>') + '</div>' +
+          '<div class="item-name">' + item.name + '</div>' +
+          '<div class="item-meta">추천 · ' + (item.fitTags || []).join(' · ') + '</div></button>');
+      });
+
+      if (!cards.length) {
+        empty.style.display = 'grid'; grid.style.display = 'none'; btn.disabled = true; go.style.display = 'none'; return;
+      }
+      empty.style.display = 'none'; grid.style.display = 'grid';
+      grid.innerHTML = cards.join('');
+      grid.querySelectorAll('.item-card').forEach((card) => card.addEventListener('click', () => {
+        state.selectedId = card.dataset.id;
+        state.selectedKind = card.dataset.kind;
+        save(); renderCloset();
+      }));
+
+      if (state.selectedKind === 'owned' && owned.some((i) => i.id === state.selectedId)) {
+        const item = owned.find((i) => i.id === state.selectedId);
+        const fit = FIT_ITEMS.find((f) => f.id === item.fitId);
+        const already = fit && ((fit.category === 'top' && state.equipped.topId === fit.id && state.wornCatalog.topId === item.id) ||
+          (fit.category === 'bottom' && state.equipped.bottomId === fit.id && state.wornCatalog.bottomId === item.id));
+        btn.disabled = !!already;
+        btn.textContent = already ? '"' + item.name + '" 이미 착용 중' : '"' + item.name + '" 착용하기';
+      } else if (state.selectedKind === 'fit' && recFits.some((i) => i.id === state.selectedId)) {
+        const selected = recFits.find((i) => i.id === state.selectedId);
+        const already = (selected.category === 'top' && state.equipped.topId === selected.id) || (selected.category === 'bottom' && state.equipped.bottomId === selected.id);
+        btn.disabled = already;
+        btn.textContent = already ? '"' + selected.name + '" 이미 착용 중' : '"' + selected.name + '" 착용하기';
+      } else {
+        btn.disabled = true; btn.textContent = '아이템을 선택하세요';
+      }
+      go.style.display = state.equipped.topId || state.equipped.bottomId ? 'block' : 'none';
+    }
+
+    function renderExplore() {
+      document.getElementById('sortRow').innerHTML = SORTS.map((s) => `<button type="button" class="chip ${state.exploreSort === s.id ? 'active' : ''}" data-sort="${s.id}">${s.label}</button>`).join('');
+      document.getElementById('chipRow').innerHTML = CHIPS.map((c) => `<button type="button" class="chip ${state.exploreFilter === c ? 'active' : ''}" data-chip="${c}">${c}</button>`).join('');
+      document.querySelectorAll('#sortRow .chip').forEach((el) => el.addEventListener('click', () => { state.exploreSort = el.dataset.sort; save(); renderExplore(); }));
+      document.querySelectorAll('#chipRow .chip').forEach((el) => el.addEventListener('click', () => { state.exploreFilter = el.dataset.chip; save(); renderExplore(); }));
+
+      const recentItems = state.recentIds.map((id) => CATALOG.find((c) => c.id === id)).filter(Boolean);
+      const rail = document.getElementById('recentRail');
+      const title = document.getElementById('recentTitle');
+      if (recentItems.length) {
+        title.style.display = 'block'; rail.style.display = 'flex';
+        rail.innerHTML = recentItems.map((item) => `<button type="button" class="recent-card" data-id="${item.id}"><img class="${posClass(item)}" src="${item.image}" alt=""><span>${item.name}</span></button>`).join('');
+        rail.querySelectorAll('.recent-card').forEach((el) => el.addEventListener('click', () => openProduct(el.dataset.id)));
+      } else { title.style.display = 'none'; rail.style.display = 'none'; }
+
+      const list = filteredCatalog();
+      const grid = document.getElementById('exploreGrid');
+      if (!list.length) {
+        grid.innerHTML = '<div class="empty" style="grid-column:1/-1;min-height:160px">검색 결과가 없습니다.</div>';
+        return;
+      }
+      grid.innerHTML = list.map((item) => {
+        const score = fitScore(item);
+        const wished = state.wishlist.includes(item.id);
+        const sp = salePrice(item);
+        return `<div class="shop-card" data-id="${item.id}">
+          <div class="visual">
+            <img class="${posClass(item)}" src="${item.image}" alt="${item.name}" loading="lazy" onerror="this.style.background='${item.color}';this.src='';this.alt='img';" />
+            ${item.discount ? `<span class="badge sale">${item.discount}%</span>` : `<span class="badge">${item.gender === 'M' ? 'MEN' : 'WOMEN'}</span>`}
+            ${item.rank <= 3 ? `<span class="badge rank">BEST ${item.rank}</span>` : (item.rising ? '<span class="badge rank">급상승</span>' : '')}
+            <button type="button" class="wish-btn ${wished ? 'on' : ''}" data-wish="${item.id}">${wished ? '♥' : '♡'}</button>
+          </div>
+          <div class="body">
+            <div class="item-meta">${item.brand} · ${item.fitStyle}</div>
+            <div class="item-name">${item.name}</div>
+            <div class="price-row"><span class="price">${won(sp)}</span>${item.discount ? `<span class="origin">${won(item.price)}</span>` : ''}</div>
+            <div class="fit-label">체형적합도 ${score}%</div>
+            <div class="fit-range">${matchRangeLabel(item)}</div>
+            <div class="fit-bar"><i style="width:${score}%"></i></div>
+          </div>
+        </div>`;
+      }).join('');
+      grid.querySelectorAll('.shop-card').forEach((card) => card.addEventListener('click', (e) => {
+        if (e.target.closest('[data-wish]')) return;
+        openProduct(card.dataset.id);
+      }));
+      grid.querySelectorAll('[data-wish]').forEach((btn) => btn.addEventListener('click', (e) => { e.stopPropagation(); toggleWish(btn.dataset.wish); }));
+    }
+
+    function toggleWish(id) {
+      const i = state.wishlist.indexOf(id);
+      if (i >= 0) state.wishlist.splice(i, 1); else state.wishlist.push(id);
+      save(); renderHeader(); renderExplore();
+      if (state.activeProductId === id) document.getElementById('btnToggleWish').textContent = state.wishlist.includes(id) ? '찜 해제' : '찜하기';
+    }
+
+    function openProduct(id) {
+      const item = CATALOG.find((c) => c.id === id); if (!item) return;
+      state.activeProductId = id;
+      state.recentIds = [id, ...state.recentIds.filter((x) => x !== id)].slice(0, 8);
+      save();
+      const score = fitScore(item); const sp = salePrice(item);
+      const img = document.getElementById('modalImg');
+      img.src = item.image;
+      img.className = posClass(item);
+      img.style.objectFit = 'contain';
+      img.style.objectPosition = 'center center';
+      img.style.backgroundColor = '#f5f5f5';
+      document.getElementById('modalName').textContent = item.name;
+      document.getElementById('modalMeta').textContent = item.brand + ' · ' + (item.gender === 'M' ? '남성' : '여성') + ' · ' + item.fitStyle + ' · ' + (item.tpo || []).join('/');
+      document.getElementById('modalPrice').textContent = won(sp);
+      const origin = document.getElementById('modalOrigin');
+      if (item.discount) { origin.style.display = 'inline'; origin.textContent = won(item.price); } else origin.style.display = 'none';
+      document.getElementById('modalFit').textContent = '체형적합도 ' + score + '% · ' + matchRangeLabel(item);
+      document.getElementById('modalDesc').textContent = item.desc;
+      document.getElementById('modalMaterial').textContent = item.material || '혼방 소재 · 드라이클리닝 권장';
+      document.getElementById('modalModel').textContent = item.modelInfo || '175cm / 60kg · 착용 사이즈 M';
+      document.getElementById('modalExpert').textContent = '💡 ' + (item.expert || '체형의 단점을 보완해주는 실루엣입니다.');
+      const other = CATALOG.filter((c) => c.gender === item.gender && c.category !== item.category).sort((a, b) => fitScore(b) - fitScore(a))[0];
+      document.getElementById('modalMatch').textContent = other ? '매치 코디 제안: ' + other.name + ' (' + other.fitStyle + ')' : '';
+      document.getElementById('btnToggleWish').textContent = state.wishlist.includes(id) ? '찜 해제' : '찜하기';
+      const owned = state.ownedIds.includes(id);
+      const toCloset = document.getElementById('btnToCloset');
+      if (owned) {
+        toCloset.disabled = true;
+        toCloset.textContent = '이미 옷장에 보유 중인 상품입니다';
+      } else {
+        toCloset.disabled = false;
+        toCloset.textContent = '옷장에 담기';
+      }
+      document.getElementById('productModal').classList.add('show');
+      renderExplore();
+      tryExploreExpReward(item);
+    }
+    function closeProduct() { document.getElementById('productModal').classList.remove('show'); state.activeProductId = null; }
+
+    function addToCart(id, delta = 1) {
+      const next = (state.cart[id] || 0) + delta;
+      if (next <= 0) delete state.cart[id]; else state.cart[id] = next;
+      save(); renderHeader(); renderCart();
+    }
+    function renderCart() {
+      const list = document.getElementById('cartList');
+      const entries = Object.entries(state.cart);
+      document.getElementById('payDone').style.display = 'none';
+      if (!entries.length) {
+        list.innerHTML = '<div class="empty" style="min-height:120px">장바구니가 비어 있습니다.</div>';
+        document.getElementById('cartTotal').textContent = won(0);
+        document.getElementById('btnCheckout').disabled = true; return;
+      }
+      document.getElementById('btnCheckout').disabled = false;
+      list.innerHTML = entries.map(([id, qty]) => {
+        const item = CATALOG.find((c) => c.id === id); if (!item) return '';
+        return `<div class="cart-line" data-id="${id}">
+          <div class="cart-swatch" style="background-image:url('${item.image}');background-color:${item.color}"></div>
+          <div><div class="item-name">${item.name}</div><div class="item-meta">${won(salePrice(item))}</div>
+          <div class="qty"><button type="button" data-act="dec">−</button><span>${qty}</span><button type="button" data-act="inc">+</button></div></div>
+          <div><div class="price">${won(salePrice(item) * qty)}</div><button type="button" class="chip" data-act="rm" style="margin-top:8px">삭제</button></div>
+        </div>`;
+      }).join('');
+      list.querySelectorAll('.cart-line').forEach((line) => {
+        const id = line.dataset.id;
+        line.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', () => {
+          if (btn.dataset.act === 'inc') addToCart(id, 1);
+          if (btn.dataset.act === 'dec') addToCart(id, -1);
+          if (btn.dataset.act === 'rm') { delete state.cart[id]; save(); renderHeader(); renderCart(); }
+        }));
+      });
+      document.getElementById('cartTotal').textContent = won(cartTotal());
+    }
+
+    function renderAll() {
+      renderHeader(); renderSliders(); renderAvatars(); renderAiResult(); renderCloset(); renderExplore(); renderCart();
+      if (state.photoDataUrl) {
+        const img = document.getElementById('photoPreview');
+        img.src = state.photoDataUrl; img.style.display = 'block';
+        const ph = document.getElementById('uploadPlaceholder');
+        if (ph) ph.style.display = 'none';
+      }
+    }
+
+    function switchTab(name) {
+      document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.dataset.screen === name));
+      document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+      if (name !== 'explore') closeProduct();
+      closeQuestModal();
+      const hideFab = name !== 'explore';
+      document.getElementById('wishFab').classList.toggle('fab-hidden', hideFab);
+      document.getElementById('cartFab').classList.toggle('fab-hidden', hideFab);
+    }
+
+    // events
+    document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
+    document.getElementById('quickBody').addEventListener('click', () => switchTab('body'));
+    document.getElementById('quickExplore').addEventListener('click', () => switchTab('explore'));
+    document.getElementById('photoInput').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        state.photoDataUrl = reader.result;
+        const img = document.getElementById('photoPreview');
+        img.src = state.photoDataUrl; img.style.display = 'block';
+        const ph = document.getElementById('uploadPlaceholder');
+        if (ph) ph.style.display = 'none';
+        setAiSteps('사진 준비됨');
+      };
+      reader.readAsDataURL(file);
+    });
+    document.getElementById('btnAnalyzeAI').addEventListener('click', runAIAnalysis);
+    document.getElementById('btnRecommend').addEventListener('click', () => {
+      recommendFromAnalysis();
+      switchTab('closet');
+      showToast('추천 옷장을 업데이트했습니다');
+    });
+    ['shoulder', 'waist', 'lower'].forEach((key) => {
+      document.getElementById(key).addEventListener('input', (e) => {
+        state.body[key] = Number(e.target.value);
+        document.getElementById('v' + key[0].toUpperCase() + key.slice(1)).textContent = state.body[key];
+        renderAvatars(); save();
+        if (document.querySelector('.screen.active')?.dataset.screen === 'explore') renderExplore();
+      });
+    });
+    document.getElementById('btnWear').addEventListener('click', () => {
+      if (state.selectedKind === 'owned') {
+        const item = CATALOG.find((c) => c.id === state.selectedId); if (!item) return;
+        const fit = FIT_ITEMS.find((f) => f.id === item.fitId); if (!fit) return;
+        if (fit.category === 'top') { state.equipped.topId = fit.id; state.wornCatalog.topId = item.id; }
+        else { state.equipped.bottomId = fit.id; state.wornCatalog.bottomId = item.id; }
+        const leveled = grantExp(EXP_PER_WEAR);
+        save(); renderCloset(); renderAvatars(); renderHeader();
+        showToast('+' + EXP_PER_WEAR + ' EXP · ' + item.name + ' 착용');
+        if (leveled) showLevelUp(state.level);
+        popAvatar();
+      } else {
+        const item = FIT_ITEMS.find((c) => c.id === state.selectedId); if (!item) return;
+        const already = (item.category === 'top' && state.equipped.topId === item.id) || (item.category === 'bottom' && state.equipped.bottomId === item.id);
+        if (already) return showToast('이미 착용 중');
+        if (item.category === 'top') { state.equipped.topId = item.id; state.wornCatalog.topId = null; }
+        else { state.equipped.bottomId = item.id; state.wornCatalog.bottomId = null; }
+        const leveled = grantExp(EXP_PER_WEAR);
+        save(); renderCloset(); renderAvatars();
+        showToast('+' + EXP_PER_WEAR + ' EXP · ' + item.name);
+        if (leveled) showLevelUp(state.level);
+        popAvatar();
+      }
+      const dq = document.getElementById('dailyQuest');
+      if (dq) dq.textContent = '일일 퀘스트 · 코디 착용 완료!';
+    });
+    document.getElementById('expGain').addEventListener('click', () => {
+      document.getElementById('expGain').classList.remove('show');
+    });
+    document.getElementById('genderSelect').addEventListener('change', (e) => {
+      state.gender = e.target.value;
+      save();
+      renderAvatars();
+    });
+    document.getElementById('btnGoHome').addEventListener('click', () => switchTab('home'));
+    document.getElementById('searchInput').addEventListener('input', (e) => { state.searchQuery = e.target.value; renderExplore(); });
+    document.getElementById('cartFab').addEventListener('click', () => { renderCart(); document.getElementById('cartSheet').classList.add('show'); });
+    document.getElementById('cartClose').addEventListener('click', () => document.getElementById('cartSheet').classList.remove('show'));
+    document.getElementById('cartSheet').addEventListener('click', (e) => { if (e.target.id === 'cartSheet') document.getElementById('cartSheet').classList.remove('show'); });
+    document.getElementById('wishFab').addEventListener('click', () => { state.exploreFilter = '찜'; save(); switchTab('explore'); renderExplore(); });
+    document.getElementById('modalClose').addEventListener('click', closeProduct);
+    document.getElementById('productModal').addEventListener('click', (e) => {
+      if (e.target.id === 'productModal') closeProduct();
+    });
+    // prevent accidental backdrop issues: detail sheet fills screen; close via X only is primary
+    document.getElementById('btnToggleWish').addEventListener('click', () => { if (state.activeProductId) toggleWish(state.activeProductId); });
+    document.getElementById('btnAddCart').addEventListener('click', () => {
+      if (!state.activeProductId) return; addToCart(state.activeProductId, 1); showToast('장바구니에 담았습니다');
+    });
+    document.getElementById('btnToCloset').addEventListener('click', () => {
+      const id = state.activeProductId; if (!id) return;
+      if (state.ownedIds.includes(id)) {
+        showToast('이미 옷장에 보유 중인 상품입니다');
+        return;
+      }
+      const item = CATALOG.find((c) => c.id === id); if (!item) return;
+      const fit = FIT_ITEMS.find((f) => f.id === item.fitId);
+      addToOwned(id);
+      if (fit) {
+        if (fit.category === 'top') { state.equipped.topId = fit.id; state.wornCatalog.topId = id; }
+        else { state.equipped.bottomId = fit.id; state.wornCatalog.bottomId = id; }
+      }
+      state.selectedId = id;
+      state.selectedKind = 'owned';
+      save();
+      closeProduct();
+      switchTab('closet');
+      renderCloset();
+      renderAvatars();
+      renderHeader();
+      showToast(item.name + ' · 옷장에 담았어요');
+      popAvatar();
+    });
+    document.getElementById('dailyQuest').addEventListener('click', openQuestModal);
+    document.getElementById('btnDailyQuest').addEventListener('click', openQuestModal);
+    document.getElementById('questClose').addEventListener('click', closeQuestModal);
+    document.getElementById('questModal').addEventListener('click', (e) => {
+      if (e.target.id === 'questModal') closeQuestModal();
+    });
+    document.getElementById('btnPhotoSave').addEventListener('click', () => {
+      const flash = document.getElementById('photoFlash');
+      flash.classList.add('on');
+      clearTimeout(document.getElementById('btnPhotoSave')._t);
+      document.getElementById('btnPhotoSave')._t = setTimeout(() => {
+        flash.classList.remove('on');
+        showToast('갤러리에 나만의 코디가 저장되었습니다!');
+      }, 140);
+    });
+    document.getElementById('btnCheckout').addEventListener('click', () => {
+      if (!cartCount()) return; state.cart = {}; save(); renderHeader(); renderCart();
+      document.getElementById('payDone').style.display = 'block'; showToast('결제 시뮬레이션 완료');
+    });
+    document.getElementById('btnSaveNick').addEventListener('click', () => {
+      state.nickname = (document.getElementById('nickInput').value.trim() || '스타일러').slice(0, 12);
+      save(); renderHeader(); showToast('닉네임 저장');
+    });
+    document.getElementById('btnClearCart').addEventListener('click', () => { state.cart = {}; save(); renderHeader(); renderCart(); showToast('장바구니 비움'); });
+    function resetAppData() {
+      if (resetAppData._busy) return;
+      resetAppData._busy = true;
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('lookfit-demo-v4');
+        localStorage.removeItem('lookfit-demo-v5');
+        Object.keys(localStorage).forEach((k) => {
+          if (k.indexOf('lookfit') === 0) localStorage.removeItem(k);
+        });
+      } catch (_) {}
+      showToast('데이터를 초기화합니다');
+      setTimeout(() => {
+        try { location.reload(); } catch (_) { location.href = location.href.split('#')[0]; }
+      }, 200);
+    }
+    document.getElementById('btnReset').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      resetAppData();
+    });
+
+    function tickClock() {
+      const d = new Date();
+      document.getElementById('clock').textContent = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+
+    load();
+    tickClock();
+    setInterval(tickClock, 30000);
+    renderAll();
+    // FABs only on explore — hide on initial home tab
+    document.getElementById('wishFab').classList.add('fab-hidden');
+    document.getElementById('cartFab').classList.add('fab-hidden');
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# Expo / RN
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+/ios
+/android
+
+# debug / OS
+npm-debug.*
+.DS_Store
+*.pem
+.env*.local
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+.claude/
