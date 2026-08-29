@@ -16,11 +16,16 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; background: #e6eaef; font-family: Outfit, system-ui, sans-serif; color: var(--ink); }
-    body { display: grid; place-items: center; min-height: 100%; padding: 16px; overflow: auto; }
+    body { display: grid; place-items: center; min-height: 100%; padding: 12px; overflow: auto; }
+    /* 셸만 축소 공간 확보 — 내부 UI 좌표는 .phone transform scale로만 맞춤 */
+    .phone-shell {
+      width: var(--canvas-w); height: var(--canvas-h); flex-shrink: 0;
+    }
     .phone {
-      width: var(--canvas-w); height: var(--canvas-h); max-width: 100%; background: var(--phone);
+      width: var(--canvas-w); height: var(--canvas-h); background: var(--phone);
       border: 1px solid #cfc7bc; border-radius: 28px; overflow: hidden; display: flex; flex-direction: column;
       position: relative; box-shadow: var(--shadow); flex-shrink: 0;
+      transform-origin: top left;
     }
     .status-bar {
       height: var(--status-h); flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;
@@ -392,6 +397,7 @@
   </style>
 </head>
 <body>
+  <div class="phone-shell" id="phoneShell">
   <div class="phone" id="app">
     <div class="status-bar"><span>LOOKFIT</span><span id="clock">22:50</span></div>
     <div class="hud-exp">
@@ -610,6 +616,7 @@
       </div>
     </div>
     <div class="levelup" id="levelup"><div class="levelup-card"><strong id="levelupText">LEVEL UP</strong><span style="color:var(--muted);font-size:.8rem">캐릭터 성장</span></div></div>
+  </div>
   </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.22.0/dist/tf-core.min.js"></script>
@@ -1497,6 +1504,23 @@
     // FABs only on explore — hide on initial home tab
     document.getElementById('wishFab').classList.add('fab-hidden');
     document.getElementById('cartFab').classList.add('fab-hidden');
+
+    // 뷰포트에 맞게 .phone 전체만 균일 scale (내부 레이아웃/좌표 변경 없음)
+    function fitPhoneToViewport() {
+      const shell = document.getElementById('phoneShell');
+      const phone = document.getElementById('app');
+      if (!shell || !phone) return;
+      const cs = getComputedStyle(document.documentElement);
+      const baseW = parseFloat(cs.getPropertyValue('--canvas-w')) || 390;
+      const baseH = parseFloat(cs.getPropertyValue('--canvas-h')) || 780;
+      const pad = 24;
+      const scale = Math.min(1, (window.innerWidth - pad) / baseW, (window.innerHeight - pad) / baseH);
+      phone.style.transform = 'scale(' + scale + ')';
+      shell.style.width = (baseW * scale) + 'px';
+      shell.style.height = (baseH * scale) + 'px';
+    }
+    fitPhoneToViewport();
+    window.addEventListener('resize', fitPhoneToViewport);
   </script>
 </body>
 </html>
