@@ -6,25 +6,117 @@
     const parseCartKey = (key) => { const [id, size] = String(key).split('::'); return { id, size: size || 'M' }; };
     const COUPON_RATE = 10;
 
-    function recommendSize(item) {
-      const h = Number(state.height) || 170, w = Number(state.weight) || 65;
-      const bmi = w / Math.pow(h / 100, 2);
-      let idx = h < 160 ? 0 : h < 171 ? 1 : h < 180 ? 2 : 3;
-      const ms = state.measure && state.measure.sizes;
-      if (ms) idx = SIZES.indexOf(item && item.kind === 'bottom' ? ms.bottom : ms.top);
-      else if (bmi >= 25) idx += 1; else if (bmi < 18.5) idx -= 1;
-      if (item && (item.fitStyle === '오버핏' || item.fitStyle === '루즈핏')) idx -= 1;
-      return SIZES[Math.max(0, Math.min(3, idx))];
-    }
-    function sizeChart(item) {
-      const skirtKeys = ['askirt', 'pleats', 'longskirt'];
-      const long = ['trench', 'coat'].includes(item.typeKey) || item.id === 'p03';
-      if (skirtKeys.includes(item.typeKey) || item.id === 'p05') {
-        return [['허리', 32, 3], ['엉덩이', 46, 3], ['총장', item.typeKey === 'askirt' ? 42 : 86, 2]];
+    // ---------- 핏 엔진: 상품 실측(핏 스타일 · 성별 · 사이즈) x 내 치수 → 부위별 여유 · 추천 사이즈 ----------
+    // M 사이즈 = 성별 기준 몸(M) + 스타일별 디자인 여유. 둘레는 전체 둘레(cm), 총장·소매·기장은 기준 몸 길이 대비 차이
+    const REF_BODY = {
+      W: { shoulder: 38, chest: 86, waist: 68, hip: 93, arm: 54, leg: 78, torso: 50 },
+      M: { shoulder: 45, chest: 97, waist: 80, hip: 97, arm: 59, leg: 84, torso: 54 },
+    };
+    // 공용 M은 남성 S~M 체격 기준
+    REF_BODY.U = { shoulder: 43, chest: 93, waist: 75, hip: 95, arm: 57, leg: 82, torso: 52 };
+    const TOP_EASE = {
+      '슬림핏': { chest: 6, shoulder: 0, length: 6, sleeve: 1 }, '세미핏': { chest: 10, shoulder: 1, length: 8, sleeve: 1 },
+      '레귤러': { chest: 14, shoulder: 2, length: 12, sleeve: 2 }, '루즈핏': { chest: 22, shoulder: 6, length: 14, sleeve: 3 },
+      '오버핏': { chest: 28, shoulder: 9, length: 14, sleeve: 2 }, '크롭': { chest: 16, shoulder: 3, length: -8, sleeve: 1 },
+      '구조핏': { chest: 12, shoulder: 3, length: 16, sleeve: 2 }, '롱실루엣': { chest: 20, shoulder: 4, length: 50, sleeve: 3 },
+    };
+    const BOTTOM_EASE = {
+      '슬림핏': { waist: 1, hip: 4, length: 0 }, '스트레이트': { waist: 2, hip: 8, length: 1 }, '와이드': { waist: 2, hip: 16, length: 3 },
+      '레귤러': { waist: 2, hip: 10, length: 0 }, 'A라인': { waist: 1, hip: 14, length: 0 }, '롱실루엣': { waist: 1, hip: 10, length: 0 },
+    };
+    // 기장 예외: 쇼츠·미니·미디(기준 기장 대비 cm)
+    const LENGTH_ADJ = { shorts: -44, askirt: -46, pleats: -18 };
+    const GRADE = { chest: 5, shoulder: 1.5, length: 2, sleeve: 1.5, waist: 5, hip: 5 };
+    const fitKind = (item) => (item.kind === 'bottom' ? 'bottom' : item.kind === 'dress' ? 'dress' : 'top');
+    const isSkirt = (item) => ['askirt', 'pleats', 'longskirt'].includes(item.typeKey) || item.id === 'p05';
+    function garmentSpec(item, size) {
+      const ref = REF_BODY[item.gender] || REF_BODY.U;
+      const g = SIZES.indexOf(size) - 1;
+      const kind = fitKind(item);
+      if (kind === 'bottom') {
+        const e = BOTTOM_EASE[item.fitStyle] || BOTTOM_EASE['레귤러'];
+        return { kind, waist: ref.waist + e.waist + GRADE.waist * g, hip: ref.hip + e.hip + GRADE.hip * g, length: ref.leg + 14 + e.length + (LENGTH_ADJ[item.typeKey] || 0) + 1.5 * g };
       }
-      if (item.kind === 'bottom') return [['허리', 34, 3], ['허벅지', 30, 1.5], ['밑위', 27, 1], ['총장', item.typeKey === 'shorts' ? 50 : 102, 2]];
-      if (item.kind === 'dress') return [['가슴', 44, 3], ['허리', 36, 3], ['총장', 108, 2]];
-      return [['어깨', item.fitStyle === '오버핏' ? 52 : 44, 2], ['가슴', 52, 3], ['소매', 60, 1.5], ['총장', long ? 108 : item.fitStyle === '크롭' ? 52 : 68, 2]];
+      const e = TOP_EASE[item.fitStyle] || TOP_EASE['레귤러'];
+      const spec = { kind, shoulder: ref.shoulder + e.shoulder + GRADE.shoulder * g, chest: ref.chest + e.chest + GRADE.chest * g, length: ref.torso + e.length + GRADE.length * g, sleeve: ref.arm + e.sleeve + GRADE.sleeve * g };
+      if (item.id === 'p03' || item.typeKey === 'coat' || item.typeKey === 'trench') spec.length = ref.torso + 60 + GRADE.length * g;
+      if (kind === 'dress') { spec.waist = ref.waist + 10 + GRADE.waist * g; spec.length = ref.torso + (item.typeKey === 'slip' ? 55 : 50) + GRADE.length * g; }
+      return spec;
+    }
+    // 내 치수: 측정값이 있으면 측정값, 없으면 키·몸무게 통계 추정
+    function fitBody() {
+      if (state.measure && state.measure.values) return { v: state.measure.values, est: state.measure.method === 'input' };
+      return { v: bodyPrior(Number(state.height) || 170, Number(state.weight) || 65, state.gender || 'W').v, est: true };
+    }
+    const TIGHT = { chest: 0, waist: -1, hip: 0, shoulder: -2 };
+    function circTone(key, ease, diff, big) {
+      if (ease < TIGHT[key]) return ['bad', key === 'shoulder' ? '좁음' : '끼임'];
+      if (key === 'shoulder') return diff < -2 ? ['warn', '타이트'] : diff <= 2 ? ['good', big ? '드롭 숄더' : '딱 맞음'] : diff <= 5 ? ['warn', '처짐'] : ['bad', '많이 큼'];
+      return diff < -4 ? ['warn', '타이트'] : diff <= 4 ? ['good', big ? '의도한 여유핏' : '딱 맞음'] : diff <= 10 ? ['warn', '여유 많음'] : ['bad', '너무 큼'];
+    }
+    // 부위별 핏: { key, label, body, garment, ease, tone(good|warn|bad|info), text }
+    function fitParts(item, size) {
+      if (!item) return [];
+      const b = fitBody().v, s = garmentSpec(item, size), m = garmentSpec(item, 'M');
+      const ref = REF_BODY[item.gender] || REF_BODY.U;
+      const r1 = (v) => Math.round(v * 10) / 10;
+      const circ = (key, label) => {
+        const ease = s[key] - b[key], design = m[key] - ref[key];
+        const [tone, text] = circTone(key, ease, ease - design, design > (key === 'shoulder' ? 5 : 18));
+        return { key, label, body: r1(b[key]), garment: r1(s[key]), ease: r1(ease), diff: r1(ease - design), tone, text };
+      };
+      const out = [];
+      if (s.kind === 'bottom') {
+        out.push(circ('waist', '허리'), circ('hip', '엉덩이'));
+        const d = s.length - (b.leg + 14);
+        const text = isSkirt(item) ? (d < -35 ? '미니 기장' : d < -15 ? '무릎 기장' : d < -5 ? '미디 기장' : '맥시 기장')
+          : d < -30 ? '무릎 위' : d < -8 ? '발목 위 크롭' : d < -2 ? '복숭아뼈' : d <= 4 ? '신발 위 딱' : '길어요 · 롤업';
+        out.push({ key: 'length', label: '기장', body: r1(b.leg), garment: r1(s.length), ease: r1(d), tone: !isSkirt(item) && d > 4 ? 'warn' : 'info', text });
+        return out;
+      }
+      out.push(circ('shoulder', '어깨'), circ('chest', '가슴'));
+      if (s.kind === 'dress') out.push(circ('waist', '허리'));
+      const d = s.length - b.torso;
+      out.push({ key: 'length', label: '총장', body: r1(b.torso), garment: r1(s.length), ease: r1(d), tone: 'info',
+        text: d < -6 ? '허리 위 크롭' : d < 6 ? '골반선' : d < 20 ? '엉덩이 덮음' : d < 40 ? '허벅지 중간' : '무릎 아래 롱' });
+      if (s.kind === 'top') {
+        const ds = s.sleeve - b.arm;
+        out.push({ key: 'sleeve', label: '소매', body: r1(b.arm), garment: r1(s.sleeve), ease: r1(ds), tone: ds < -5 || ds > 6 ? 'warn' : 'info', text: ds < -5 ? '짧아요' : ds <= 3 ? '손목 딱' : '손등 덮음' });
+      }
+      return out;
+    }
+    // 디자인 의도(M 기준 여유)에 가장 가까운 사이즈. 끼임은 크게, 헐렁함은 작게 감점
+    const designEase = (item, key) => garmentSpec(item, 'M')[key] - (REF_BODY[item.gender] || REF_BODY.U)[key];
+    function bestSize(item) {
+      let best = 'M', bestP = Infinity;
+      SIZES.forEach((sz) => {
+        const p = fitParts(item, sz).filter((x) => ['shoulder', 'chest', 'waist', 'hip'].includes(x.key)).reduce((acc, x) => {
+          // 끼어서 못 입는 쪽이 큰 쪽보다 훨씬 나쁨 (큰 옷은 벨트·롤업으로 입을 수 있음)
+          const w = x.key === 'shoulder' ? 0.6 : 1, dev = x.ease - designEase(item, x.key);
+          const tone = x.ease < TIGHT[x.key] ? 20 : { good: 0, warn: 2, bad: 8 }[x.tone];
+          return acc + w * (tone + Math.abs(dev) * (dev < 0 ? 0.25 : 0.15));
+        }, 0);
+        if (p < bestP - 1e-6) { bestP = p; best = sz; }
+      });
+      return best;
+    }
+    function recommendSize(item) {
+      if (!item) return 'M';
+      return bestSize(item);
+    }
+    // 한 줄 핏 요약 (AR 상태·룩 비교용)
+    function fitSummary(item, size) {
+      return fitParts(item, size).filter((p) => p.key !== 'sleeve').map((p) => p.label + ' ' + p.text).join(' · ');
+    }
+    // 사이즈표(단면 cm): [라벨, M값, 사이즈당 증감]
+    function sizeChart(item) {
+      const m = garmentSpec(item, 'M'), l = garmentSpec(item, 'L');
+      const row = (label, key, half) => [label, Math.round((half ? m[key] / 2 : m[key]) * 10) / 10, Math.round(((l[key] - m[key]) / (half ? 2 : 1)) * 10) / 10];
+      if (m.kind === 'bottom') return [row('허리단면', 'waist', true), row('엉덩이단면', 'hip', true), row('총장', 'length')];
+      const rows = [row('어깨', 'shoulder'), row('가슴단면', 'chest', true), row('총장', 'length')];
+      if (m.kind === 'dress') rows.splice(2, 0, row('허리단면', 'waist', true));
+      else rows.push(row('소매', 'sleeve'));
+      return rows;
     }
     const REVIEW_TEXT = {
       top: ['핏이 딱 예뻐요. 세탁 후에도 형태가 잘 유지돼요.', '두께감이 적당해서 사계절 입기 좋아요.', '색감이 사진이랑 거의 같아요. 재구매 의사 있어요.', '어깨가 조금 넓게 나와서 한 사이즈 내려도 될 것 같아요.'],

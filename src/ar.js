@@ -144,12 +144,11 @@
     }
 
     // ---------- AR 피팅: 관절 → 의상 메쉬 워핑 ----------
-    const AR_SIZE_SCALE = { S: 0.93, M: 1, L: 1.07, XL: 1.14 };
     const AR_REWARD_EXP = 15;
     const AR_DETECT_MS = 32;
     const AR = {
       open: false, mode: null, view: 'tryon', stream: null, raf: 0, src: null, srcPose: null, kp: null, lost: 0, busy: false,
-      outfit: { top: null, bottom: null }, size: 'M', assets: {}, fit: null, railIds: [], filt: {}, jump: 0,
+      outfit: { top: null, bottom: null }, size: 'M', sizes: {}, assets: {}, fit: null, railIds: [], filt: {}, jump: 0,
       frames: 0, fpsAt: 0, fps: 0, statusText: '', detAt: 0, learnSaveAt: 0, lastPose: null,
       gest: { side: null, since: 0, prog: 0, lock: false }, focusId: null, timer: 0,
     };
@@ -160,6 +159,24 @@
     const extPt = (a, b, t) => Pt(a.x + (a.x - b.x) * t, a.y + (a.y - b.y) * t);
     const arItem = (id) => CATALOG.find((c) => c.id === id) || WARDROBE.find((c) => c.id === id);
     const arCapable = (item) => !!(item && item.ar);
+    // 사이즈는 아이템별로 기억(기본값 = 그 상품 추천). 내 옷(사진 등록)은 사이즈 개념 없음
+    const arSizeOf = (id) => AR.sizes[id] || recommendSize(arItem(id));
+    // 추천 사이즈를 기준(x1)으로 잡고, 고른 사이즈의 실측 둘레 비율만큼 폭을 바꿈(체감되도록 1.6배 강조)
+    function arSizeScale(item) {
+      if (!item || item.custom) return 1;
+      const key = fitKind(item) === 'bottom' ? 'hip' : 'chest';
+      const r = garmentSpec(item, arSizeOf(item.id))[key] / garmentSpec(item, recommendSize(item))[key];
+      return Math.max(0.8, Math.min(1.3, 1 + (r - 1) * 1.6));
+    }
+    function arSetSize(size) {
+      const it = arItem(AR.focusId);
+      if (!it || it.custom) return;
+      AR.size = size;
+      AR.sizes[it.id] = size;
+      arRenderSizes();
+      arShowNow(it);
+      if (AR.kp || AR.srcPose) arTracked();
+    }
 
     function arAsset(item) {
       if (AR.assets[item.id]) return AR.assets[item.id];
@@ -241,11 +258,92 @@
       const long = p.d.match(/L(\d+(?:\.\d+)?) 218/), short = p.d.match(/L(\d+(?:\.\d+)?) 112 Z/);
       return long ? Number(long[1]) - 147 : short ? Number(short[1]) - 142 : 0;
     }
-    function arDrawGarment(ctx, item, Kd, scale = AR_SIZE_SCALE[AR.size] || 1, widen = SLEEVE_WIDEN) {
+    // 실사 옷 소매 리깅: 원본 팔 관절(어깨→팔꿈치→손목) 둘레를 소매로 떼어 내고, 몸판의 빈자리는 몸통 폭 안에서만 원단색으로 메움
+    const PHOTO_SLEEVE_HW = 0.42, TORSO_IN = 0.42, TORSO_OUT = 0.56;
+    function photoRig(item, a) {
+      const k = a.kp;
+      if (!k.le || !k.lw || !k.re || !k.rw) return null;
+      const iw = a.img.naturalWidth || a.img.width, ih = a.img.naturalHeight || a.img.height;
+      const layer = () => {
+        const c = document.createElement('canvas');
+        c.width = iw; c.height = ih;
+        const x = c.getContext ? c.getContext('2d') : null;
+        return x ? { c, x } : null;
+      };
+      const body = layer();
+      if (!body) return null;
+      const K = kpPoints(k), sw = Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y), hw = sw * PHOTO_SLEEVE_HW;
+      const hm = lerpPt(K.lh, K.rh, 0.5), hl = Math.hypot(K.lh.x - K.rh.x, K.lh.y - K.rh.y) || 1;
+      const hu = Pt((K.lh.x - K.rh.x) / hl, (K.lh.y - K.rh.y) / hl);
+      // 몸통 영역: 어깨 → 골반 폭(w) → 아래로는 곧게 (롱코트·원피스 자락이 소매에 딸려 가지 않게)
+      const dn = Pt(-hu.y, hu.x), down = dn.y >= 0 ? dn : Pt(-dn.x, -dn.y), far = Math.max(iw, ih) * 2;
+      const torso = (w) => {
+        const L = Pt(hm.x + hu.x * sw * w, hm.y + hu.y * sw * w), R = Pt(hm.x - hu.x * sw * w, hm.y - hu.y * sw * w);
+        return [extPt(K.ls, L, 0.6), K.ls, L, Pt(L.x + down.x * far, L.y + down.y * far), Pt(R.x + down.x * far, R.y + down.y * far), R, K.rs, extPt(K.rs, R, 0.6)];
+      };
+      const poly = (x, pts) => { x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y))); x.closePath(); x.fill(); };
+      body.x.drawImage(a.img, 0, 0);
+      const rig = { body: body.c, K, hw };
+      ['l', 'r'].forEach((s) => {
+        const m = layer();
+        const S = K[s + 's'], E = K[s + 'e'], Wr = K[s + 'w'];
+        m.x.lineCap = 'round'; m.x.lineJoin = 'round'; m.x.lineWidth = hw * 2; m.x.strokeStyle = '#000';
+        m.x.beginPath(); [S, E, Wr, extPt(Wr, E, 0.2)].forEach((p, i) => (i ? m.x.lineTo(p.x, p.y) : m.x.moveTo(p.x, p.y))); m.x.stroke();
+        m.x.globalCompositeOperation = 'destination-out'; m.x.fillStyle = '#000';
+        poly(m.x, torso(TORSO_IN));
+        body.x.globalCompositeOperation = 'destination-out';
+        body.x.drawImage(m.c, 0, 0);
+        m.x.globalCompositeOperation = 'source-in';
+        m.x.drawImage(a.img, 0, 0);
+        rig[s] = m.c;
+      });
+      // 빈자리(몸통 폭 안쪽만)는 바로 안쪽 몸판 원단을 바깥으로 밀어 채움 → 팔을 들어도 옆구리가 이어져 보임
+      const holes = ['l', 'r'].map((s) => {
+        const F = layer(), T = layer(), out = s === 'l' ? hu : Pt(-hu.x, -hu.y);
+        F.x.drawImage(rig[s], 0, 0);
+        F.x.globalCompositeOperation = 'destination-in'; F.x.fillStyle = '#000';
+        poly(F.x, torso(TORSO_OUT));
+        T.x.globalCompositeOperation = 'destination-over';
+        [0.08, 0.16, 0.26, 0.4, 0.6].forEach((t) => T.x.drawImage(body.c, out.x * sw * t, out.y * sw * t));
+        T.x.globalCompositeOperation = 'destination-in';
+        T.x.drawImage(F.c, 0, 0);
+        return T.c;
+      });
+      body.x.globalCompositeOperation = 'destination-over';
+      holes.forEach((c) => body.x.drawImage(c, 0, 0));
+      body.x.globalCompositeOperation = 'source-over';
+      return rig;
+    }
+    function photoSleeve(side, rig, Kd, scale) {
+      const Ks = rig.K, o = side === 'l' ? 'r' : 'l';
+      const mid = lerpPt(Kd.ls, Kd.rs, 0.5);
+      const sc = (p) => Pt(mid.x + (p.x - mid.x) * scale, mid.y + (p.y - mid.y) * scale);
+      const S = sc(Kd[side + 's']), O = sc(Kd[o + 's']);
+      const E = Kd[side + 'e'], W = Kd[side + 'w'] || Pt(E.x + (E.x - S.x) * 0.95, E.y + (E.y - S.y) * 0.95);
+      const f = Math.hypot(S.x - O.x, S.y - O.y) / (Math.hypot(Ks.ls.x - Ks.rs.x, Ks.ls.y - Ks.rs.y) || 1);
+      const Se = Ks[side + 'e'], Sw = Ks[side + 'w'];
+      const cuff = Math.hypot(Sw.x - Se.x, Sw.y - Se.y) * 0.2 + rig.hw;
+      const src = armChain(Ks[side + 's'], Se, Sw, Ks[o + 's'], rig.hw, cuff);
+      const dst = armChain(S, E, W, O, rig.hw * f, cuff * f);
+      const grid = (ch, hw) => ch.rows.map((p, i) => [-1, 0, 1].map((k) => Pt(p.x + ch.perps[i].x * hw * k, p.y + ch.perps[i].y * hw * k)));
+      return [grid(src, rig.hw * 1.12), grid(dst, rig.hw * 1.12 * f * 1.04)];
+    }
+    function arDrawGarment(ctx, item, Kd, scale = 1, widen = SLEEVE_WIDEN) {
       const a = arAsset(item);
       if (!a.ready) return;
       const gs = meshGrid(kpPoints(a.kp), 1);
       const gd = meshGrid(Kd, scale);
+      if ((item.isPhoto || item.custom) && item.ar.slot !== 'bottom') {
+        if (a.rig === undefined) a.rig = photoRig(item, a);
+        if (a.rig) {
+          arDrawMesh(ctx, a.rig.body, gs, gd);
+          ['l', 'r'].forEach((s) => {
+            if (Kd[s + 'e']) arDrawMesh(ctx, a.rig[s], ...photoSleeve(s, a.rig, Kd, scale));
+            else arDrawMesh(ctx, a.rig[s], gs, gd);
+          });
+          return 'rig';
+        }
+      }
       const sp = a.split;
       const armed = sp && sp.body.ready && sp.l.ready && sp.r.ready ? ['l', 'r'].filter((s) => Kd[s + 'e']) : [];
       if (!armed.length) { arDrawMesh(ctx, a.img, gs, gd); return; }
@@ -313,13 +411,13 @@
         const shaded = !it.isPhoto && !it.custom;
         const G = (shaded || opt.sil) && offCanvas('g', W, H);
         if (!G) { arDrawGarment(ctx, it, K, sc, widen); return; }
-        arDrawGarment(G.ctx, it, K, sc, widen);
+        const rigged = arDrawGarment(G.ctx, it, K, sc, widen) === 'rig';
         if (shaded) {
           if (shadeMap === undefined) shadeMap = arShadeMap(K, W, H);
           if (shadeMap) { G.ctx.globalCompositeOperation = 'source-atop'; G.ctx.drawImage(shadeMap, 0, 0); G.ctx.globalCompositeOperation = 'source-over'; }
         }
-        // 사진 옷의 소매는 팔을 따라 휘지 않으므로, 캐릭터에서는 팔과 몸통 사이 허공(손목 높이 위)에 걸린 부분을 지운다
-        if (opt.sil && !shaded && it.ar.slot !== 'bottom' && K.le && K.lw && K.re && K.rw) {
+        // 팔 관절이 없는 사진 옷은 소매가 팔을 따라 휘지 않으므로, 캐릭터에서는 팔과 몸통 사이 허공(손목 높이 위)에 걸린 부분을 지운다
+        if (opt.sil && !shaded && !rigged && it.ar.slot !== 'bottom' && K.le && K.lw && K.re && K.rw) {
           const M = offCanvas('m', W, H);
           M.ctx.fillStyle = '#000';
           const dn = Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y) * 0.45;
@@ -522,7 +620,8 @@
       if (src.type === 'image' && AR.srcPose) AR.kp = arKeypoints(AR.srcPose, arMapFn(r, W, false));
       if (!AR.kp) return;
       if (AR.view === 'measure') { arDrawSkeleton(ctx, AR.kp, W); return; }
-      arDrawOutfit(ctx, [AR.outfit.bottom, AR.outfit.top].map((id) => id && arItem(id)).filter(Boolean), AR.kp, AR_SIZE_SCALE[AR.size] || 1, SLEEVE_WIDEN, W, H);
+      arDrawOutfit(ctx, [AR.outfit.bottom, AR.outfit.top].map((id) => id && arItem(id)).filter(Boolean), AR.kp, 1, SLEEVE_WIDEN, W, H, { scaleFor: arSizeScale });
+      arDrawFitMap(ctx, AR.kp, W, H);
       arDrawGesture(ctx, AR.kp, W);
     }
     function arOnPose(res) {
@@ -567,9 +666,9 @@
       AR.raf = rafFn(arLoop);
     }
     function arTracked() {
-      const names = [arItem(AR.outfit.top), arItem(AR.outfit.bottom)].filter(Boolean).map((i) => i.name).join(' + ') || '아래에서 옷을 선택하세요';
+      const names = [arItem(AR.outfit.top), arItem(AR.outfit.bottom)].filter(Boolean).map((i) => i.name + (i.custom ? '' : ' ' + arSizeOf(i.id))).join(' + ') || '아래에서 옷을 선택하세요';
       const modeTxt = AR.mode === 'camera' ? '실시간 추적' + (AR.fps ? ' ' + AR.fps + 'fps' : '') : AR.mode === 'photo' ? '내 사진' : '샘플 모델';
-      arStatus(modeTxt + ' · ' + AR.size + ' · ' + names);
+      arStatus(modeTxt + ' · ' + names + (state.fitMap && fitBody().est ? ' · 핏은 키·몸무게 추정' : ''));
       arMaybeReward();
       if (AR.mode === 'camera' && AR.kp) arCoach();
     }
@@ -678,9 +777,12 @@
     function arToggle(id) {
       const item = arItem(id);
       if (!arCapable(item)) return;
-      if (AR.outfit.top === id) AR.outfit.top = null;
-      else if (AR.outfit.bottom === id) AR.outfit.bottom = null;
-      else { arPut(item); AR.focusId = id; arShowNow(item); }
+      const worn = AR.outfit.top === id || AR.outfit.bottom === id;
+      if (worn && AR.focusId !== id) { AR.focusId = id; arShowNow(item); }
+      else if (worn) {
+        if (AR.outfit.top === id) AR.outfit.top = null; else AR.outfit.bottom = null;
+        AR.focusId = AR.outfit.top || AR.outfit.bottom;
+      } else { arPut(item); AR.focusId = id; arShowNow(item); }
       arRenderRail(); arRenderSizes();
       if (AR.kp || AR.srcPose) arTracked();
     }
@@ -688,14 +790,15 @@
       document.querySelectorAll('#arModes [data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === AR.mode));
     }
     function arRenderSizes() {
-      const first = arItem(AR.outfit.top) || arItem(AR.outfit.bottom);
-      const rec = recommendSize(first);
-      document.getElementById('arSizes').innerHTML = '<span class="lbl">사이즈</span>' + SIZES.map((s) =>
+      const it = arItem(AR.focusId) || arItem(AR.outfit.top) || arItem(AR.outfit.bottom);
+      const el = document.getElementById('arSizes');
+      if (it && it.custom) { el.innerHTML = '<span class="lbl">사이즈</span><span class="ar-size-note">내 옷은 사진 크기 그대로 입혀요</span>'; return; }
+      const rec = recommendSize(it);
+      if (it) AR.size = arSizeOf(it.id);
+      const slot = it ? (it.ar.slot === 'bottom' ? '하의' : it.ar.slot === 'full' ? '전신' : '상의') : '';
+      el.innerHTML = `<span class="lbl">사이즈${slot ? '<small>' + slot + '</small>' : ''}</span>` + SIZES.map((s) =>
         `<button type="button" class="ar-chip ${AR.size === s ? 'active' : ''}" data-size="${s}">${s}${s === rec ? '<i>추천</i>' : ''}</button>`).join('');
-      document.querySelectorAll('#arSizes [data-size]').forEach((b) => b.addEventListener('click', () => {
-        AR.size = b.dataset.size; arRenderSizes();
-        if (AR.kp || AR.srcPose) arTracked();
-      }));
+      el.querySelectorAll('[data-size]').forEach((b) => b.addEventListener('click', () => arSetSize(b.dataset.size)));
     }
     function arRenderRail() {
       const on = [AR.outfit.top, AR.outfit.bottom];
@@ -724,7 +827,7 @@
         if (!focus.length) focus.push(...CATALOG.filter((c) => c.isPhoto && c.ar).slice(0, 2).map((c) => c.id));
         AR.outfit = { top: null, bottom: null };
         focus.forEach((id) => arPut(arItem(id)));
-        AR.size = recommendSize(arItem(focus[0]));
+        AR.focusId = focus[0];
       }
       AR.railIds = arRailIds([AR.outfit.top, AR.outfit.bottom].filter(Boolean));
       if (view) AR.view = view;
@@ -740,6 +843,7 @@
       arRenderCats();
       arRenderRail();
       arRenderToggles();
+      renderLookBtn();
       if (!AR.focusId || ![AR.outfit.top, AR.outfit.bottom].includes(AR.focusId)) AR.focusId = AR.outfit.top || AR.outfit.bottom;
       if (!wasOpen || !AR.mode) {
         const canCam = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -755,20 +859,199 @@
       await arStopSources(false);
       AR.mode = null;
     }
+    // 착용샷은 앱 안 룩 앨범에 저장 (핏 라벨 없이 깨끗한 컷). 앨범에서 비교·다시 입기·담기·다운로드
     function arCapture() {
       const cv = document.getElementById('arCanvas');
+      const fm = state.fitMap;
+      state.fitMap = false; arRender();
+      let img = null;
       try {
-        downloadCanvas(cv, 'lookfit-ar-');
-        flashScreen('AR 착용샷을 저장했어요');
-      } catch (e) {
-        showToast('로컬 파일 실행에서는 실사 의상 캡처가 막혀요 (node scripts/serve.js 로 실행)');
-      }
+        const k = Math.min(1, 360 / cv.width), s = document.createElement('canvas');
+        s.width = Math.round(cv.width * k); s.height = Math.round(cv.height * k);
+        s.getContext('2d').drawImage(cv, 0, 0, s.width, s.height);
+        img = s.toDataURL('image/jpeg', 0.82);
+      } catch (e) { img = null; }
+      state.fitMap = fm; arRender();
+      if (!img || img.length < 100) { showToast('로컬 파일 실행에서는 실사 의상 캡처가 막혀요 (node scripts/serve.js 로 실행)'); return; }
+      const ids = [AR.outfit.top, AR.outfit.bottom].filter(Boolean);
+      const n = lookAdd({ img, top: AR.outfit.top, bottom: AR.outfit.bottom, sizes: Object.fromEntries(ids.map((id) => [id, arSizeOf(id)])) });
+      flashScreen(n ? `룩 앨범에 저장했어요 · ${n}/${LOOK_MAX}` : '저장 공간이 부족해 앨범에 저장하지 못했어요');
     }
     function downloadCanvas(cv, prefix) {
-      const url = cv.toDataURL('image/png');
+      downloadUrl(cv.toDataURL('image/png'), prefix + Date.now() + '.png');
+    }
+    function downloadUrl(url, name) {
       const a = document.createElement('a');
-      a.href = url; a.download = prefix + Date.now() + '.png';
+      a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    // ---------- 룩 앨범: 최대 8컷 · 2컷 나란히 비교 ----------
+    const LOOK_KEY = 'lookfit-looks-v1', LOOK_MAX = 8;
+    let LOOKS = [];
+    const LOOK_SEL = [];
+    try { const v = JSON.parse(localStorage.getItem(LOOK_KEY) || '[]'); if (Array.isArray(v)) LOOKS = v.filter((l) => l && l.id && l.img); } catch (_) {}
+    function looksPersist() {
+      while (LOOKS.length) {
+        try { localStorage.setItem(LOOK_KEY, JSON.stringify(LOOKS)); return true; } catch (_) { LOOKS.pop(); }
+      }
+      try { localStorage.removeItem(LOOK_KEY); } catch (_) {}
+      return false;
+    }
+    function lookAdd(look) {
+      LOOKS.unshift({ id: 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(), ...look });
+      LOOKS = LOOKS.slice(0, LOOK_MAX);
+      const ok = looksPersist();
+      renderLookBtn();
+      return ok ? LOOKS.length : 0;
+    }
+    function lookInfo(l) {
+      const items = [l.top, l.bottom].filter(Boolean).map((id) => ({ id, it: arItem(id), size: (l.sizes || {})[id] }));
+      const shop = items.filter((x) => x.it && !x.it.custom);
+      return { items, shop, total: shop.reduce((s, x) => s + salePrice(x.it), 0) };
+    }
+    function renderLookBtn() {
+      const b = document.getElementById('arLooks');
+      if (!b) return;
+      const l = LOOKS[0];
+      b.innerHTML = (l ? `<img src="${l.img}" alt="">` : '<svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 15l4-4 5 5 3-3 4 4"/></svg>') + (LOOKS.length ? `<b>${LOOKS.length}</b>` : '');
+    }
+    function openLooks() {
+      LOOK_SEL.length = 0;
+      renderLooks();
+      document.getElementById('lookSheet').classList.add('show');
+    }
+    function closeLooks() { document.getElementById('lookSheet').classList.remove('show'); }
+    function lookToggle(id) {
+      const i = LOOK_SEL.indexOf(id);
+      if (i >= 0) LOOK_SEL.splice(i, 1);
+      else { LOOK_SEL.push(id); if (LOOK_SEL.length > 2) LOOK_SEL.shift(); }
+      renderLooks();
+    }
+    function renderLooks() {
+      const sel = LOOK_SEL.map((id) => LOOKS.find((l) => l.id === id)).filter(Boolean);
+      document.getElementById('lookCount').textContent = `${LOOKS.length}/${LOOK_MAX}`;
+      const cmp = document.getElementById('lookCompare');
+      cmp.hidden = sel.length !== 2;
+      if (sel.length === 2) {
+        const info = sel.map(lookInfo);
+        cmp.innerHTML = '<div class="lc-cols">' + sel.map((l, n) => {
+          const f = info[n], other = info[1 - n];
+          const rows = f.items.map((x) => x.it
+            ? `<li><small>${x.it.ar.slot === 'bottom' ? '하의' : x.it.ar.slot === 'full' ? '전신' : '상의'}${x.size && !x.it.custom ? ' · ' + x.size : ''}</small><b>${x.it.name}</b>${x.it.custom ? '' : `<em>${fitSummary(x.it, x.size || recommendSize(x.it)).split(' · ').slice(0, 2).join(' · ')}</em>`}</li>`
+            : '<li><b>삭제된 옷</b></li>').join('');
+          const diff = f.total - other.total;
+          return `<div class="lc-col"><img src="${l.img}" alt=""><span class="lc-tag">${String.fromCharCode(65 + n)}</span><ul>${rows}</ul>
+            <div class="lc-sum">${f.shop.length ? won(f.total) : '내 옷 코디'}${f.shop.length && other.shop.length && diff ? `<small>${diff > 0 ? '+' : '-'}${won(Math.abs(diff))}</small>` : ''}</div>
+            <div class="lc-act"><button type="button" class="btn sm dark-line" data-lwear="${l.id}">다시 입기</button><button type="button" class="btn sm mint" data-lcart="${l.id}" ${f.shop.length ? '' : 'disabled'}>담기</button></div></div>`;
+        }).join('') + '</div>';
+      }
+      const one = sel.length === 1 ? sel[0] : null;
+      document.getElementById('lookHint').textContent = !LOOKS.length ? '아직 저장한 룩이 없어요 · AR에서 착용샷을 찍어 보세요' : sel.length === 2 ? 'A · B 룩을 나란히 비교 중' : '두 컷을 고르면 나란히 비교해요';
+      document.getElementById('lookGrid').innerHTML = LOOKS.map((l) => {
+        const f = lookInfo(l), n = LOOK_SEL.indexOf(l.id);
+        return `<button type="button" class="look-card ${n >= 0 ? 'on' : ''}" data-look="${l.id}"><img src="${l.img}" alt="">${n >= 0 ? `<i>${String.fromCharCode(65 + n)}</i>` : ''}
+          <span>${f.items.map((x) => (x.it ? x.it.name : '삭제된 옷') + (x.size && x.it && !x.it.custom ? ' ' + x.size : '')).join(' + ')}</span></button>`;
+      }).join('');
+      const bar = document.getElementById('lookBar');
+      bar.hidden = !one;
+      if (one) bar.innerHTML = `<button type="button" class="btn sm dark-line" data-lwear="${one.id}">다시 입기</button><button type="button" class="btn sm mint" data-lcart="${one.id}" ${lookInfo(one).shop.length ? '' : 'disabled'}>담기</button><button type="button" class="btn sm line" data-ldown="${one.id}">다운로드</button><button type="button" class="btn sm line" data-ldel="${one.id}">삭제</button>`;
+      const sheet = document.getElementById('lookSheet');
+      sheet.querySelectorAll('[data-look]').forEach((b) => b.addEventListener('click', () => lookToggle(b.dataset.look)));
+      sheet.querySelectorAll('[data-lwear]').forEach((b) => b.addEventListener('click', () => lookWear(b.dataset.lwear)));
+      sheet.querySelectorAll('[data-lcart]').forEach((b) => b.addEventListener('click', () => lookCart(b.dataset.lcart)));
+      sheet.querySelectorAll('[data-ldown]').forEach((b) => b.addEventListener('click', () => { const l = LOOKS.find((x) => x.id === b.dataset.ldown); if (l) downloadUrl(l.img, 'lookfit-look-' + l.at + '.jpg'); }));
+      sheet.querySelectorAll('[data-ldel]').forEach((b) => b.addEventListener('click', () => lookDelete(b.dataset.ldel)));
+    }
+    function lookWear(id) {
+      const l = LOOKS.find((x) => x.id === id);
+      if (!l) return;
+      const ids = [l.top, l.bottom].filter((x) => x && arCapable(arItem(x)));
+      if (!ids.length) { showToast('이 룩의 옷을 더 이상 찾을 수 없어요'); return; }
+      Object.entries(l.sizes || {}).forEach(([k, v]) => { AR.sizes[k] = v; });
+      closeLooks();
+      AR.view = 'tryon';
+      openAR(ids);
+      showToast('저장한 룩을 다시 입었어요 · ' + ids.map((x) => arItem(x).name).join(' + '));
+    }
+    function lookCart(id) {
+      const l = LOOKS.find((x) => x.id === id);
+      const f = l && lookInfo(l);
+      if (!f || !f.shop.length) return;
+      f.shop.forEach((x) => addToCart(cartKey(x.id, x.size || recommendSize(x.it)), 1));
+      showToast(`${f.shop.length}벌을 장바구니에 담았어요 · ${f.shop.map((x) => x.size || recommendSize(x.it)).join(' / ')}`);
+    }
+    function lookDelete(id) {
+      LOOKS = LOOKS.filter((l) => l.id !== id);
+      const i = LOOK_SEL.indexOf(id);
+      if (i >= 0) LOOK_SEL.splice(i, 1);
+      looksPersist(); renderLooks(); renderLookBtn();
+      showToast('룩을 삭제했어요');
+    }
+
+    // ---------- 시연 준비: 첫 실행 지연(모델 다운로드·셰이더 컴파일)과 권한 팝업을 시연 전에 미리 끝내 둠 ----------
+    const DEMO = { running: false, rows: [] };
+    function renderDemoPrep() {
+      const el = document.getElementById('demoPrepList');
+      if (!el) return;
+      el.innerHTML = DEMO.rows.map((r) => `<li data-k="${r.k}"><i class="${r.st}"></i><b>${r.label}</b><span>${r.detail || ''}</span></li>`).join('');
+    }
+    async function demoPrep() {
+      if (DEMO.running) return;
+      DEMO.running = true;
+      const btn = document.getElementById('btnDemoPrep'), sub = document.getElementById('demoPrepSub');
+      btn.disabled = true; btn.textContent = '확인 중…';
+      const photos = CATALOG.filter((c) => c.isPhoto && c.ar);
+      DEMO.rows = [
+        { k: 'pose', label: 'AI 포즈 모델 예열' },
+        { k: 'seg', label: '옷 분할 모델 예열' },
+        { k: 'cam', label: '카메라 권한' },
+        { k: 'assets', label: `실사 옷 ${photos.length}벌 · 소매 리깅` },
+        { k: 'coach', label: '혼자 쓰기 안내 다시 보이기' },
+      ].map((r) => ({ ...r, st: '', detail: '' }));
+      const t0 = performance.now();
+      const step = async (k, fn, ms = 30000) => {
+        const r = DEMO.rows.find((x) => x.k === k), s = performance.now();
+        r.st = 'run'; renderDemoPrep();
+        try {
+          const out = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error(`${ms / 1000}초 초과 · 네트워크 확인`)), ms))]);
+          r.st = out && out.skip ? 'skip' : 'ok';
+          r.detail = (out && out.detail) || ((performance.now() - s) / 1000).toFixed(1) + '초';
+        } catch (e) { r.st = 'fail'; r.detail = (e && e.message) || '실패'; }
+        renderDemoPrep();
+      };
+      await step('pose', async () => { await poseWarmup(); return { detail: POSE.label }; });
+      await step('seg', async () => {
+        if (POSE.kind !== 'mediapipe') return { skip: true, detail: 'MoveNet 모드 · 옷 등록 제외' };
+        const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+        const g = c.getContext('2d'); g.fillStyle = '#888'; g.fillRect(0, 0, 256, 256);
+        await segClothes(c);
+      });
+      await step('cam', async () => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('카메라 없음 → 샘플·사진 모드');
+        let s;
+        try { s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); } catch (e) { throw new Error(e && e.name === 'NotAllowedError' ? '권한 거부 → 브라우저 설정에서 허용' : '카메라를 열 수 없음'); }
+        const tr = s.getVideoTracks()[0], set = tr && tr.getSettings ? tr.getSettings() : {};
+        s.getTracks().forEach((t) => t.stop());
+        return { detail: set.width ? `허용 · ${set.width}x${set.height}` : '허용' };
+      }, 20000);
+      await step('assets', async () => {
+        const ready = await Promise.all(photos.map((it) => new Promise((res) => {
+          const a = arAsset(it), until = Date.now() + 12000;
+          const tick = () => { if (a.ready) { if (a.rig === undefined) a.rig = photoRig(it, a); res(true); } else if (Date.now() > until) res(false); else setTimeout(tick, 60); };
+          tick();
+        })));
+        const ok = ready.filter(Boolean).length, rigged = photos.filter((it) => AR.assets[it.id] && AR.assets[it.id].rig).length;
+        if (ok < photos.length) throw new Error(`${photos.length - ok}벌 불러오기 실패`);
+        return { detail: `${ok}벌 준비 · 소매 ${rigged}벌` };
+      });
+      await step('coach', async () => { state.arCoachSeen = false; save(); return { detail: 'AR 첫 화면에서 표시' }; });
+      const okN = DEMO.rows.filter((r) => r.st === 'ok' || r.st === 'skip').length;
+      sub.textContent = okN === DEMO.rows.length ? `시연 준비 완료 · ${((performance.now() - t0) / 1000).toFixed(1)}초` : `${DEMO.rows.length - okN}개 항목을 확인해 주세요 · 실패해도 샘플 모델로 시연할 수 있어요`;
+      btn.disabled = false; btn.textContent = '다시 확인';
+      DEMO.running = false;
+      showToast(okN === DEMO.rows.length ? '시연 준비 완료 · AR 시작이 바로 떠요' : '일부 항목을 확인해 주세요');
+      return DEMO.rows.map((r) => r.k + ':' + r.st).join(',');
     }
 
     // ---------- 혼자서도 쓰는 AR: 음성·비프 안내, 손 들기 제스처, 타이머 촬영 ----------
@@ -830,6 +1113,69 @@
         ctx.restore();
       });
     }
+    // 핏 맵: 입은 옷의 부위별 여유를 몸 위 해당 위치에 라벨로 표시 (선택한 옷은 3부위, 나머지 옷은 대표 1부위)
+    const FIT_TONE = { good: '#19B394', warn: '#F0A020', bad: '#E5484D', info: '#8A8F98' };
+    const FIT_KEYS = { top: ['shoulder', 'chest', 'length'], dress: ['chest', 'waist', 'length'], bottom: ['waist', 'hip', 'length'] };
+    function arFitAnchors(item, K) {
+      const b = fitBody().v, s = garmentSpec(item, arSizeOf(item.id));
+      const shY = (K.ls.y + K.rs.y) / 2, hipY = (K.lh.y + K.rh.y) / 2, tp = hipY - shY;
+      const L = Math.min(K.ls.x, K.rs.x), R = Math.max(K.ls.x, K.rs.x), cx = (K.ls.x + K.rs.x + K.lh.x + K.rh.x) / 4;
+      const rightSh = K.ls.x > K.rs.x ? K.ls : K.rs;
+      if (fitKind(item) === 'bottom') {
+        const wy = hipY - tp * 0.12, ay = (K.la.y + K.ra.y) / 2;
+        const hemY = wy + (s.length / (b.leg + 14)) * (ay - wy);
+        const hL = Math.min(K.lh.x, K.rh.x), hR = Math.max(K.lh.x, K.rh.x), hw = hR - hL;
+        return {
+          waist: [Pt(hL - hw * 0.1, wy), -1],
+          hip: [Pt(hR + hw * 0.15, hipY + tp * 0.1), 1],
+          length: [Pt((K.la.x + K.ra.x) / 2, hemY), -1],
+        };
+      }
+      return {
+        shoulder: [rightSh, 1],
+        chest: [Pt(L + (R - L) * 0.06, shY + tp * 0.35), -1],
+        waist: [Pt(R - (R - L) * 0.1, shY + tp * 0.7), 1],
+        length: [Pt(cx, shY + (s.length / b.torso) * tp), 1],
+      };
+    }
+    function arDrawFitMap(ctx, K, W, H) {
+      if (!state.fitMap || AR.view !== 'tryon' || !K || !K.ls || !K.lh || !K.la) return;
+      const ids = [AR.focusId, AR.outfit.top, AR.outfit.bottom].filter((id, i, a) => id && a.indexOf(id) === i && (id === AR.outfit.top || id === AR.outfit.bottom));
+      const fs = Math.max(10, Math.round(W / 30)), ph = fs * 1.7, placed = [];
+      ctx.save();
+      ctx.font = `700 ${fs}px Pretendard, 'Apple SD Gothic Neo', sans-serif`;
+      ctx.textBaseline = 'middle';
+      ids.forEach((id, n) => {
+        const it = arItem(id);
+        if (!it || it.custom) return;
+        const kind = fitKind(it), parts = fitParts(it, arSizeOf(id)), A = arFitAnchors(it, K);
+        const keys = n === 0 ? FIT_KEYS[kind] : [kind === 'bottom' ? 'waist' : 'chest'];
+        keys.forEach((key) => {
+          const p = parts.find((q) => q.key === key), a = A[key];
+          if (!p || !a) return;
+          const [pt, side] = a;
+          const txt = p.label + ' ' + p.text + (p.diff !== undefined ? ` ${p.ease > 0 ? '+' : ''}${Math.round(p.ease)}cm` : '');
+          const tw = ctx.measureText(txt).width, pw = tw + ph * 0.5 + fs * 1.1;
+          let x = side > 0 ? pt.x + W * 0.07 : pt.x - W * 0.07 - pw;
+          x = Math.max(4, Math.min(W * 0.86 - pw, x));
+          let y = Math.max(ph / 2 + 4, Math.min(H - ph / 2 - 4, pt.y));
+          for (let k = 0; k < 6 && placed.some((r) => x < r.x + r.w && r.x < x + pw && Math.abs(r.y - y) < ph + 3); k++) y += ph + 4;
+          placed.push({ x, y, w: pw });
+          const ex = pt.x < x ? x : x + pw;
+          ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1, fs / 9);
+          ctx.beginPath(); ctx.moveTo(pt.x, pt.y); ctx.lineTo(ex, y); ctx.stroke();
+          ctx.fillStyle = FIT_TONE[p.tone] || FIT_TONE.info;
+          ctx.beginPath(); ctx.arc(pt.x, pt.y, fs * 0.28, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(20,20,22,.78)';
+          ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y - ph / 2, pw, ph, ph / 2) : ctx.rect(x, y - ph / 2, pw, ph); ctx.fill();
+          ctx.fillStyle = FIT_TONE[p.tone] || FIT_TONE.info;
+          ctx.beginPath(); ctx.arc(x + ph * 0.45, y, fs * 0.3, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText(txt, x + ph * 0.45 + fs * 0.6, y + 0.5);
+        });
+      });
+      ctx.restore();
+    }
     function arTimerCapture() {
       if (AR.timer) return;
       AR.timer = 3;
@@ -872,10 +1218,11 @@
       const el = document.getElementById('arNow');
       if (!it) return;
       const slot = it.ar.slot === 'bottom' ? '하의' : it.ar.slot === 'full' ? '전신' : '상의';
-      el.innerHTML = `<small>${slot} · ${it.brand}</small><b>${it.name}</b><span>${won(salePrice(it))}</span>`;
+      const fit = it.custom ? '' : `<p>${arSizeOf(it.id)} · ${fitSummary(it, arSizeOf(it.id))}</p>`;
+      el.innerHTML = `<small>${slot} · ${it.brand}</small><b>${it.name}</b><span>${it.custom ? '내 옷' : won(salePrice(it))}</span>${fit}`;
       el.classList.add('show');
       clearTimeout(el._t);
-      el._t = setTimeout(() => el.classList.remove('show'), 2200);
+      el._t = setTimeout(() => el.classList.remove('show'), 2600);
     }
     function arScrollRailTo(id) {
       const b = document.querySelector(`#arRail [data-ar="${id}"]`);
@@ -925,17 +1272,15 @@
     function arRenderToggles() {
       document.getElementById('arVoice').classList.toggle('on', !!state.voice);
       document.getElementById('arGest').classList.toggle('on', !!state.gesture);
+      document.getElementById('arFit').classList.toggle('on', !!state.fitMap);
     }
     function arKey(e) {
       if (!AR.open || AR.view !== 'tryon' || /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '')) return;
       const sizes = SIZES, i = sizes.indexOf(AR.size);
       if (e.key === 'ArrowRight') arStep(1);
       else if (e.key === 'ArrowLeft') arStep(-1);
-      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        AR.size = sizes[Math.max(0, Math.min(sizes.length - 1, i + (e.key === 'ArrowUp' ? 1 : -1)))];
-        arRenderSizes();
-        if (AR.kp || AR.srcPose) arTracked();
-      } else if (e.key === 't' || e.key === 'T') arTimerCapture();
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') arSetSize(sizes[Math.max(0, Math.min(sizes.length - 1, i + (e.key === 'ArrowUp' ? 1 : -1)))]);
+      else if (e.key === 't' || e.key === 'T') arTimerCapture();
       else if (e.key === 'f' || e.key === 'F') arFullscreen();
       else return;
       e.preventDefault();
@@ -1518,6 +1863,7 @@
         const [colorName] = nearestColor(rgb);
         const kp = {};
         ['ls', 'rs', 'lh', 'rh', 'lk', 'rk', 'la', 'ra'].forEach((key) => { kp[key] = [Math.round((K[key].x - x0) * k1), Math.round((K[key].y - y0) * k1)]; });
+        if (pc.slot !== 'bottom' && K.le && K.lw && K.re && K.rw) ['le', 'lw', 're', 'rw'].forEach((key) => { kp[key] = [Math.round((K[key].x - x0) * k1), Math.round((K[key].y - y0) * k1)]; });
         const hex = '#' + rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
         out.push({ slot: pc.slot, src: oc.toDataURL('image/png'), kp, color: hex, colorName, w: oc.width, h: oc.height });
       }

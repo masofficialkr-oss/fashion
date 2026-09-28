@@ -167,19 +167,31 @@ function scanLayout() {
   await sleep(500);
   await snap('09-ar-arms');
   check('A-03', '팔 관절 추적 → 소매 분리 렌더', await page.evaluate(() => !!(AR.kp && AR.kp.le && AR.kp.re)));
+  const sleeve = await page.evaluate(() => {
+    arRender();
+    const cv = document.getElementById('arCanvas'), g = cv.getContext('2d'), K = AR.kp;
+    const lum = (p) => { const d = g.getImageData(Math.round(p.x), Math.round(p.y), 1, 1).data; return d[0] * 0.3 + d[1] * 0.59 + d[2] * 0.11; };
+    const a = AR.assets.p04, pl = lerpPt(K.ls, K.le, 0.6), pr = lerpPt(K.rs, K.re, 0.6);
+    const out = { rig: !!(a && a.rig), l: lum(pl), r: lum(pr) };
+    const saved = a.rig; a.rig = null; arRender();
+    out.l0 = lum(pl); out.r0 = lum(pr);
+    a.rig = saved; arRender();
+    return out;
+  });
+  check('A-03b', '실사 옷 소매가 든 팔을 따라감 (리깅 끄면 같은 자리가 배경)', sleeve.rig && sleeve.l < 170 && sleeve.r < 170 && Math.max(sleeve.l0 - sleeve.l, sleeve.r0 - sleeve.r) > 40, JSON.stringify(sleeve));
   const pc = await page.evaluate(() => {
     const size = (el) => { const r = el.getBoundingClientRect(), s = r.width / el.offsetWidth || 1; return [r.width / s, r.height / s]; };
     const navs = ['arPrev', 'arNext'].map((id) => document.getElementById(id));
     const tools = [...document.querySelectorAll('.ar-tools button')];
     return {
       navs: navs.every((b) => b && size(b)[0] >= 28 && size(b)[1] >= 40),
-      tools: tools.length === 3 && tools.every((b) => size(b)[0] >= 32 && b.getAttribute('aria-label')),
+      tools: tools.length === 4 && tools.every((b) => size(b)[0] >= 32 && b.getAttribute('aria-label')),
       cats: [...document.querySelectorAll('#arCats [data-cat]')].map((b) => b.textContent),
       add: !!document.querySelector('#arRail #arAddGarment'),
     };
   });
   check('A-07', 'PC 조작: ‹ › 버튼 · 카테고리 칩(내 옷은 등록 전 숨김)', pc.navs && pc.cats.length === 4 && !pc.cats.includes('내 옷'), JSON.stringify(pc));
-  check('A-08', '전체화면 · 제스처 · 음성 토글 (라벨 포함)', pc.tools, JSON.stringify(pc));
+  check('A-08', '전체화면 · 제스처 · 핏 표시 · 음성 토글 (라벨 포함)', pc.tools, JSON.stringify(pc));
   check('A-09', '레일 끝 "+ 옷 등록" (사진으로 내 옷 추가)', pc.add);
   await page.evaluate(() => { state.arCat = '원피스·전신'; arRenderCats(); arRenderRail(); });
   await snap('09b-ar-cat-full');

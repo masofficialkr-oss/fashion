@@ -181,7 +181,9 @@
     .measure-ov .prog small { display: block; margin-top: 8px; color: #FFD27A; font-weight: 600; }
     .ar-panel { flex-shrink: 0; padding: 12px 0 14px; }
     .ar-sizes { display: flex; gap: 6px; padding: 0 14px; align-items: center; margin-bottom: 12px; }
-    .ar-sizes .lbl { font-size: .72rem; color: rgba(255,255,255,.5); margin-right: 4px; font-weight: 600; }
+    .ar-sizes .lbl { font-size: .72rem; color: rgba(255,255,255,.5); margin-right: 4px; font-weight: 600; line-height: 1.15; }
+    .ar-sizes .lbl small { display: block; font-size: .6rem; color: var(--mint); }
+    .ar-size-note { font-size: .72rem; color: rgba(255,255,255,.7); }
     .ar-chip { height: 32px; min-width: 44px; padding: 0 10px; border-radius: 10px; background: var(--dark-3); color: rgba(255,255,255,.8); font-size: .8rem; font-weight: 700; position: relative; }
     .ar-chip.active { background: #fff; color: var(--ink); }
     .ar-chip i { position: absolute; top: -7px; right: -4px; font-style: normal; font-size: .54rem; background: var(--mint); color: #fff; border-radius: 5px; padding: 1px 4px; }
@@ -209,6 +211,7 @@
     .ar-now small { display: block; font-size: .62rem; color: var(--muted); font-weight: 600; }
     .ar-now b { display: block; font-size: .84rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ar-now span { font-size: .74rem; font-weight: 800; color: var(--mint); }
+    .ar-now p { margin: 3px 0 0; font-size: .64rem; color: var(--muted); font-weight: 600; white-space: normal; }
     .ar-timer { position: absolute; inset: 0; display: none; place-items: center; font-size: 6rem; font-weight: 900; z-index: 5; pointer-events: none; text-shadow: 0 4px 24px rgba(0,0,0,.5); }
     .ar-timer.show { display: grid; }
     .ar-coach { position: absolute; left: 12px; right: 12px; top: 50%; transform: translateY(-50%); z-index: 4; background: rgba(14,15,17,.86); backdrop-filter: blur(10px); border-radius: 18px; padding: 16px; display: none; flex-direction: column; gap: 7px; font-size: .8rem; }
@@ -229,8 +232,52 @@
     .ar-item img { width: 100%; height: 100%; object-fit: cover; }
     .ar-item.on { outline-color: var(--mint); }
     .ar-item .slot { position: absolute; left: 0; right: 0; bottom: 0; font-size: .56rem; font-weight: 800; background: rgba(0,0,0,.6); color: #fff; text-align: center; padding: 1px 0; }
-    .ar-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; padding: 0 14px; }
-    .ar-actions .btn { height: 46px; }
+    .ar-actions { display: grid; grid-template-columns: 46px 1fr 1.4fr; gap: 8px; padding: 0 14px; }
+    .ar-actions .btn { height: 46px; padding: 0 8px; }
+    .ar-looks { position: relative; width: 46px; height: 46px; border-radius: 12px; background: var(--dark-3); color: rgba(255,255,255,.7); overflow: hidden; display: grid; place-items: center; }
+    .ar-looks img { width: 100%; height: 100%; object-fit: cover; }
+    .ar-looks svg.i { width: 20px; height: 20px; }
+    .ar-looks b { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--mint); color: #fff; font-size: .6rem; font-weight: 800; display: grid; place-items: center; }
+    .sheet-head h3 small { font-size: .74rem; color: var(--muted); font-weight: 700; margin-left: 4px; }
+    .look-hint { font-size: .76rem; color: var(--muted); margin: -2px 0 10px; }
+    .look-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .look-card { position: relative; border-radius: 12px; overflow: hidden; background: #F2F2F4; text-align: left; outline: 2px solid transparent; outline-offset: 1px; }
+    .look-card img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+    .look-card span { display: block; font-size: .6rem; font-weight: 600; padding: 4px 6px 6px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .look-card.on { outline-color: var(--mint); }
+    .look-card i, .lc-tag { position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 50%; background: var(--mint); color: #fff; font-style: normal; font-size: .7rem; font-weight: 800; display: grid; place-items: center; }
+    .look-compare { margin-bottom: 12px; }
+    .lc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .lc-col { position: relative; background: #F6F6F8; border-radius: 14px; padding: 6px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .lc-col img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; }
+    .lc-tag { top: 12px; left: 12px; }
+    .lc-col ul { list-style: none; margin: 0; padding: 0 2px; display: grid; gap: 5px; }
+    .lc-col li small { display: block; font-size: .58rem; color: var(--muted); font-weight: 700; }
+    .lc-col li b { display: block; font-size: .7rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lc-col li em { display: block; font-style: normal; font-size: .6rem; color: #0F8A70; font-weight: 600; }
+    .lc-sum { font-size: .82rem; font-weight: 850; padding: 0 2px; }
+    .lc-sum small { margin-left: 6px; font-size: .64rem; color: var(--muted); font-weight: 700; }
+    .lc-act { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .lc-act .btn { height: 34px; padding: 0; font-size: .72rem; }
+    .look-bar { position: sticky; bottom: -18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px -18px -18px; padding: 10px 18px 18px; background: #fff; box-shadow: 0 -6px 16px rgba(0,0,0,.06); }
+    .look-bar .btn { padding: 0; font-size: .74rem; }
+    .look-bar[hidden], .look-compare[hidden] { display: none; }
+    .demo-prep h4 .btn { height: 32px; font-size: .74rem; }
+    .dp-sub { font-size: .74rem; color: var(--muted); margin: 2px 0 0; }
+    .dp-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 7px; }
+    .dp-list:empty { display: none; }
+    .dp-list li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; font-size: .78rem; }
+    .dp-list li b { font-weight: 700; }
+    .dp-list li span { font-size: .7rem; color: var(--muted); text-align: right; max-width: 170px; }
+    .dp-list i { width: 16px; height: 16px; border-radius: 50%; background: #E4E4E8; display: grid; place-items: center; color: #fff; font-style: normal; font-size: .62rem; font-weight: 900; }
+    .dp-list i.run { background: none; border: 2px solid var(--mint); border-top-color: transparent; animation: spin .8s linear infinite; }
+    .dp-list i.ok { background: var(--mint); }
+    .dp-list i.ok::after { content: '✓'; }
+    .dp-list i.fail { background: #E5484D; }
+    .dp-list i.fail::after { content: '!'; }
+    .dp-list i.skip { background: #B8B8C0; }
+    .dp-list i.skip::after { content: '–'; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .btn.dark-line { background: var(--dark-3); color: #fff; }
     .ar-panel.measure { max-height: 330px; overflow-y: auto; scrollbar-width: none; padding-top: 10px; }
     .m-form { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding: 0 14px; }
@@ -366,6 +413,19 @@
     .size-chip { flex: 1; height: 42px; border-radius: 10px; border: 1px solid #DADADA; background: #fff; font-weight: 700; font-size: .88rem; position: relative; }
     .size-chip.on { border-color: var(--ink); background: var(--ink); color: #fff; }
     .size-chip .rec { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-size: .56rem; background: var(--mint); color: #fff; border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+    .fitp { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 6px; }
+    .fitp .hd { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; font-weight: 800; margin-bottom: 6px; }
+    .fitp .hd small { font-size: .64rem; font-weight: 700; color: var(--muted); background: #F2F2F0; border-radius: 6px; padding: 2px 6px; }
+    .fitp .hd small.m { color: #0f8a70; background: #E3F6F1; }
+    .fitp .r { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 8px; padding: 6px 0; font-size: .74rem; border-top: 1px dashed var(--line); }
+    .fitp .r:first-of-type { border-top: 0; }
+    .fitp .r b { font-weight: 700; color: var(--muted); }
+    .fitp .meter { position: relative; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #F3C6C0 0 18%, #F6E3BF 18% 36%, #CFEFE5 36% 64%, #F6E3BF 64% 82%, #F3C6C0 82%); }
+    .fitp .meter i { position: absolute; top: -3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #fff; border: 3px solid var(--ink); transition: left .25s; }
+    .fitp .meter.info { background: #EDEDEB; }
+    .fitp .t { font-weight: 800; white-space: nowrap; }
+    .fitp .t em { font-style: normal; font-weight: 600; color: var(--muted); margin-left: 4px; }
+    .fit-good { color: #0f8a70; } .fit-warn { color: #b7791f; } .fit-bad { color: #d64545; } .fit-info { color: var(--ink); }
     .size-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .74rem; text-align: center; }
     .size-table th, .size-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); }
     .size-table th { color: var(--muted); font-weight: 600; }
@@ -497,6 +557,7 @@
           <div class="ar-tools">
             <button type="button" id="arFull" title="크게 보기 (F)" aria-label="크게 보기"><svg class="i" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             <button type="button" id="arGest" title="손 제스처로 옷 넘기기" aria-label="손 제스처"><svg class="i" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5a1.5 1.5 0 0 1 3 0V11m0-4.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.6 14a1.5 1.5 0 0 1 2.4-1.8L8 14"/></svg></button>
+            <button type="button" id="arFit" title="부위별 핏 표시" aria-label="핏 표시"><svg class="i" viewBox="0 0 24 24"><path d="M3 15l12-12 6 6-12 12zM7 11l2 2M10 8l2 2M13 5l2 2"/></svg></button>
             <button type="button" id="arVoice" title="음성 안내" aria-label="음성 안내"><svg class="i" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6L8 10zM16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
           </div>
           <div class="ar-now" id="arNow"></div>
@@ -515,6 +576,7 @@
           </div>
           <div class="ar-sizes" id="arSizes"></div>
           <div class="ar-actions">
+            <button type="button" class="ar-looks" id="arLooks" title="룩 앨범" aria-label="룩 앨범"></button>
             <button type="button" class="btn dark-line" id="arCapture">착용샷 저장</button>
             <button type="button" class="btn mint" id="arToCart">이 코디 장바구니 담기</button>
           </div>
@@ -557,6 +619,7 @@
           <div class="nick-row"><input id="nickInput" maxlength="12" placeholder="닉네임" /><button class="btn ghost sm" type="button" id="btnSaveNick">변경</button></div>
           <div class="stat-grid"><div><b id="setLevel">1</b>레벨</div><div><b id="setOwned">0</b>보유</div><div><b id="setWish">0</b>찜</div><div><b id="setOrders">0</b>주문</div></div>
         </div>
+        <div class="card my-card demo-prep"><h4>시연 준비 <button class="btn mint sm" type="button" id="btnDemoPrep">준비 시작</button></h4><p class="dp-sub" id="demoPrepSub">AI 모델 예열 · 카메라 권한 · 실사 옷 준비를 한 번에 확인해요</p><ul class="dp-list" id="demoPrepList"></ul></div>
         <div class="card my-card"><h4>내 체형 <button class="link" type="button" id="btnRemeasure">측정하기</button></h4><div id="myBody"></div></div>
         <div class="card my-card"><h4>AR 인식 학습 <button class="link" type="button" id="btnLearnReset">초기화</button></h4><div id="myLearn"></div></div>
         <div class="card my-card"><h4>사진으로 등록한 옷 <button class="link" type="button" id="btnWardrobeClear">모두 삭제</button></h4><div id="myWardrobe"></div></div>
@@ -603,7 +666,7 @@
           <div class="coupon-line" id="modalCoupon"></div>
         </div>
         <div id="modalFit"></div>
-        <div class="pdp-sec"><h4>사이즈 <span id="sizeRec"></span></h4><div class="size-row" id="sizeRow"></div><table class="size-table" id="sizeTable"></table></div>
+        <div class="pdp-sec"><h4>사이즈 <span id="sizeRec"></span></h4><div class="size-row" id="sizeRow"></div><div class="fitp" id="pdpFitParts"></div><table class="size-table" id="sizeTable"></table></div>
         <div class="pdp-sec"><h4>상품 정보</h4><p id="modalDesc">-</p>
           <dl class="info-grid" style="margin-top:12px"><dt>구분</dt><dd id="modalMeta">-</dd><dt>소재</dt><dd id="modalMaterial">-</dd><dt>모델</dt><dd id="modalModel">-</dd></dl>
         </div>
@@ -630,6 +693,17 @@
         <div class="cart-total"><span>결제 예정 금액</span><span id="cartTotal">₩0</span></div>
         <button class="btn primary block" id="btnCheckout" type="button">결제하기 (시뮬레이션)</button>
         <div class="pay-done" id="payDone"><strong>결제 완료</strong>실제 청구는 없어요 · 구매한 상품은 옷장에 담겼어요</div>
+      </div>
+    </div>
+
+    <div class="sheet-bg" id="lookSheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head"><h3>룩 앨범 <small id="lookCount"></small></h3><button class="icon-btn" id="lookClose" type="button" aria-label="닫기"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <p class="look-hint" id="lookHint"></p>
+        <div class="look-compare" id="lookCompare" hidden></div>
+        <div class="look-grid" id="lookGrid"></div>
+        <div class="look-bar" id="lookBar" hidden></div>
       </div>
     </div>
 

@@ -179,9 +179,10 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   await sleep(150);
   const b2 = await page.evaluate(() => AR.outfit.bottom);
   const s0 = await page.evaluate(() => AR.size);
-  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press(s0 === 'XL' ? 'ArrowDown' : 'ArrowUp');
   const s1 = await page.evaluate(() => AR.size);
-  assert('키보드 → 다음 옷 / ↑ 사이즈', b2 !== b1.bottom && s1 !== s0, `${s0}→${s1}`);
+  const own = await page.evaluate(() => AR.sizes[AR.focusId]);
+  assert('키보드 → 다음 옷 / ↑↓ 사이즈 (선택한 옷에만 적용)', b2 !== b1.bottom && s1 !== s0 && own === s1, `${s0}→${s1}`);
   await page.evaluate(() => { document.querySelector('#arCats [data-cat="전체"]').click(); document.getElementById('arRail').scrollLeft = 0; });
   await sleep(200);
   const rail = await page.$('#arRail');
@@ -277,6 +278,15 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   await page.click('#arCapture');
   await sleep(500);
   assert('AR 착용샷 저장', /저장/.test(await page.$eval('#toast', (e) => e.textContent)));
+  const album = await page.evaluate(() => {
+    const l = LOOKS[0];
+    return { n: LOOKS.length, jpeg: !!l && /^data:image\/jpeg/.test(l.img), kb: l ? Math.round(l.img.length / 1024) : 0, ids: l ? [l.top, l.bottom].join() : '', stored: JSON.parse(localStorage.getItem('lookfit-looks-v1') || '[]').length, thumb: !!document.querySelector('#arLooks img') };
+  });
+  assert('착용샷 → 룩 앨범 (JPEG · 옷 기록 · 저장소)', album.n >= 1 && album.jpeg && album.kb < 120 && album.ids === 'p06,p07' && album.stored === album.n && album.thumb, JSON.stringify(album));
+  await page.click('#arLooks');
+  await sleep(300);
+  await shot('09b-look-album');
+  await page.evaluate(() => closeLooks());
   await page.evaluate(() => { state.cart = {}; });
   await page.click('#arToCart');
   assert('AR 코디 장바구니 2벌', (await page.evaluate(() => Object.keys(state.cart).length)) === 2);
@@ -301,6 +311,7 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   assert('등록 즉시 AR 착용 + 내 옷 카테고리', wd.worn && wd.cat === '내 옷' && wd.chip && wd.rail, JSON.stringify(wd));
   assert('내 옷 저장 · 옷장 편입 · 쇼핑 목록 제외', wd.saved === 2 && wd.owned && !wd.shop);
   await sleep(700);
+  assert('내 옷 상의도 팔 관절 저장 → 소매 리깅', await page.evaluate(() => { const t = WARDROBE.find((w) => w.ar.slot === 'top'); const a = AR.assets[t.id]; return !!(t.ar.kp.le && t.ar.kp.rw && a && a.rig); }));
   await shot('11-ar-wardrobe');
   const lookyWear = await page.evaluate(async () => {
     const top = WARDROBE.find((w) => w.ar.slot === 'top');
@@ -317,6 +328,13 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   const myAfter = await page.evaluate(() => ({ n: WARDROBE.length, dom: document.querySelectorAll('#myWardrobe .wd').length }));
   assert('MY → 등록한 옷 목록 · 개별 삭제', myN === 2 && myAfter.n === 1 && myAfter.dom === 1, `${myN}→${myAfter.n}`);
   await shot('12-my-wardrobe');
+  await page.evaluate(() => { state.arCoachSeen = true; });
+  await page.click('#btnDemoPrep');
+  const tPrep = await waitFor(page, () => !DEMO.running && DEMO.rows.length === 5, 60000);
+  const prep = await page.evaluate(() => ({ rows: DEMO.rows.map((r) => r.k + ':' + r.st + '(' + r.detail + ')').join(', '), all: DEMO.rows.every((r) => r.st === 'ok'), coach: state.arCoachSeen, sub: document.getElementById('demoPrepSub').textContent }));
+  assert('시연 준비: 모델 예열 · 카메라 · 실사 옷 리깅 · 안내 초기화 전부 통과', tPrep >= 0 && prep.all && prep.coach === false && /완료/.test(prep.sub), prep.rows);
+  await page.evaluate(() => document.querySelector('.demo-prep').scrollIntoView());
+  await shot('12b-demo-prep');
   await page.click('.tab[data-tab="home"]');
   await sleep(900);
   await shot('13-home-looky-wardrobe');

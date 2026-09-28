@@ -130,11 +130,40 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
   const bottomId = ev("AR.railIds.find((id) => arItem(id).ar.slot === 'bottom')");
   click(document.querySelector(`#arRail [data-ar="${bottomId}"]`));
   assert('하의 슬롯 토글', ev('AR.outfit.bottom') === bottomId);
+  const topId = ev('AR.outfit.top');
+  const pick = ev(`recommendSize(arItem('${bottomId}'))`) === 'XL' ? 'S' : 'XL';
+  click(document.querySelector(`#arSizes [data-size="${pick}"]`));
+  assert('아이템별 사이즈: 선택한 하의만 변경', ev(`AR.sizes['${bottomId}']`) === pick && !ev(`AR.sizes['${topId}']`) && $('arSizes').textContent.includes('하의'));
+  assert('사이즈 변경 → 실측 비율로 폭 변화', ev(`arSizeScale(arItem('${bottomId}'))`) > 1 === (pick === 'XL') && ev(`arSizeScale(arItem('${topId}'))`) === 1);
+  const topBtn = document.querySelector(`#arRail [data-ar="${topId}"]`);
+  if (topBtn) { click(topBtn); assert('입은 옷 다시 누르면 선택만 전환(벗기지 않음)', ev('AR.outfit.top') === topId && ev('AR.focusId') === topId && $('arSizes').textContent.includes('상의')); }
+  click($('arFit'));
+  assert('핏 표시 토글', ev('state.fitMap') === false && !$('arFit').classList.contains('on'));
+  click($('arFit'));
+  assert('핏 표시 다시 켜기', ev('state.fitMap') === true && $('arFit').classList.contains('on'));
+  assert('핏 라벨 앵커 (상의 3부위 · 하의 3부위)', ev(`(() => { const K = charKp(); const t = arFitAnchors(arItem('${topId}'), K), b = arFitAnchors(arItem('${bottomId}'), K); return ['shoulder','chest','length'].every((k) => t[k]) && ['waist','hip','length'].every((k) => b[k]) && b.length[0].y > b.waist[0].y && t.length[0].y > t.shoulder[0].y; })()`));
   const fullId = ev("AR.railIds.find((id) => arItem(id).ar.slot === 'full')");
   if (fullId) { click(document.querySelector(`#arRail [data-ar="${fullId}"]`)); assert('전신 의상은 하의 해제', ev('AR.outfit.top') === fullId && ev('AR.outfit.bottom') === null); }
   ev('state.cart = {}; save();');
   click($('arToCart'));
   assert('AR 코디 장바구니', Object.keys(ev('state.cart')).length >= 1);
+  ev("for (let i = 0; i < 9; i++) lookAdd({ img: 'data:image/jpeg;base64,AAAA' + i, top: i % 2 ? 'p01' : 'p04', bottom: 'p02', sizes: { p01: 'L', p04: 'S', p02: i % 2 ? 'XL' : 'M' } });");
+  assert('룩 앨범 최대 8컷 + 별도 저장소', ev('LOOKS.length') === 8 && JSON.parse(W.localStorage.getItem('lookfit-looks-v1')).length === 8 && !!document.querySelector('#arLooks b'));
+  click($('arLooks'));
+  assert('룩 앨범 시트', $('lookSheet').classList.contains('show') && document.querySelectorAll('#lookGrid .look-card').length === 8 && $('lookCompare').hidden);
+  const cards = () => document.querySelectorAll('#lookGrid .look-card');
+  click(cards()[0]); click(cards()[1]);
+  assert('두 컷 선택 → 나란히 비교 (옷·사이즈·가격 차이)', !$('lookCompare').hidden && document.querySelectorAll('#lookCompare .lc-col').length === 2 && /XL/.test($('lookCompare').textContent) && /₩/.test($('lookCompare').textContent) && !!document.querySelector('#lookCompare .lc-sum small'));
+  click(cards()[1]);
+  assert('한 컷 선택 → 다시 입기·담기·다운로드·삭제', $('lookCompare').hidden && !$('lookBar').hidden && $('lookBar').querySelectorAll('button').length === 4);
+  ev('state.cart = {}; save();');
+  click(document.querySelector('#lookBar [data-lcart]'));
+  assert('룩 담기 → 저장된 사이즈로 장바구니', ev("Object.keys(state.cart).sort().join()") === ['p02::M', 'p04::S'].sort().join());
+  click(document.querySelector('#lookBar [data-ldel]'));
+  assert('룩 삭제', ev('LOOKS.length') === 7 && JSON.parse(W.localStorage.getItem('lookfit-looks-v1')).length === 7);
+  click(cards()[0]);
+  click(document.querySelector('#lookBar [data-lwear]'));
+  assert('룩 다시 입기 → 옷·사이즈 복원', !$('lookSheet').classList.contains('show') && ev("AR.outfit.top === 'p01' && AR.outfit.bottom === 'p02' && arSizeOf('p02') === 'XL' && arSizeOf('p01') === 'L'"));
   tab('home');
   await sleep(20);
   assert('탭 이탈 시 AR 종료', ev('AR.open') === false && ev('AR.mode') === null && !$('app').classList.contains('dark'));
@@ -200,13 +229,15 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
     assert('결과 카드 (치수 6 + 사이즈)', !$('measureResult').hidden && document.querySelectorAll('#measureResult .metrics div').length === 6 && $('measureResult').textContent.includes('상의'));
     assert('입력값 추정은 EXP 없음(카메라/사진만)', ev('state.exp + state.level * 100') === expBefore);
     assert('추천 6개 재계산', ev('state.recommendedIds.length') === 6);
-    assert('사이즈 추천이 측정값 사용', ev("recommendSize(CATALOG.find((c) => c.kind === 'bottom' && c.fitStyle !== '오버핏'))") === m.sizes.bottom);
+    assert('핏 엔진이 측정 치수 사용', ev('fitBody().v.chest') === m.values.chest && ev('fitBody().v.hip') === m.values.hip);
+    assert('상품별 추천 = 부위별 핏 점수 최적', ev("CATALOG.every((c) => recommendSize(c) === bestSize(c))") && ev("new Set(CATALOG.map((c) => recommendSize(c))).size") >= 2);
     click(document.querySelector('#arSeg [data-view="tryon"]'));
     assert('시착 뷰 복귀', $('arMeasurePanel').hidden && !$('arTryPanel').hidden);
   }
   tab('explore');
   assert('측정 후 체형% 배지 + 체형순 정렬', !!document.querySelector('#exploreGrid .fit-pill') && !!document.querySelector('#sortSelect option[value="fit"]'));
   ev("openProduct('p04')");
+  assert('PDP 부위별 핏 카드 (여유 cm + 미터)', document.querySelectorAll('#pdpFitParts .r').length >= 3 && document.querySelectorAll('#pdpFitParts .meter i').length >= 3 && /cm/.test($('pdpFitParts').textContent));
   assert('측정 후 PDP 적합도 박스', !!document.querySelector('#modalFit .fit-box .score') && $('sizeRec').textContent.includes('측정'));
   ev('closeProduct()');
 
@@ -236,6 +267,11 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
   assert('소매 레이어 분리 + 루즈핏 오프셋', ev("(() => { const t = CATALOG.find((c) => c.typeKey === 'longsleeve'), hd = CATALOG.find((c) => c.typeKey === 'hoodie'), ot = CATALOG.find((c) => c.typeKey === 'otee'); const n = (m) => (garmentSVG(t, m).match(/<path/g) || []).length; return n('ar-l') === n('ar-r') && n('ar-body') + n('ar-l') * 2 === n('ar') && sleeveShift(t) === 0 && sleeveShift(hd) === 8 && sleeveShift(ot) === 8; })()"));
   assert('거울 모드에서도 소매 안쪽 유지', ev(`(() => { const K = { ls: Pt(100, 100), rs: Pt(300, 100), le: Pt(60, 260) }; const [src, dst] = sleeveStrips('l', K, 1);
     const inward = (g, other) => { const a = g[1][2], b = g[1][0]; return ((a.x - b.x) * (other.x - b.x)) > 0; }; return src.length === 5 && inward(dst, K.rs); })()`));
+  assert('실사 상의 앵커에 팔 관절(팔꿈치·손목) 포함', ev("Object.entries(AR_PHOTO_ANCHORS).filter(([k]) => !k.endsWith('_bottom')).every(([, a]) => ['le','lw','re','rw'].every((j) => Array.isArray(a.kp[j])))"));
+  assert('실사 소매 띠: 원본 팔 축 → 실제 팔 축', ev(`(() => { const K = kpPoints(AR_PHOTO_ANCHORS.look_c_top.kp); const rig = { K, hw: 40 };
+    const Kd = { ls: Pt(300, 100), rs: Pt(100, 100), le: Pt(420, 40), lw: Pt(520, -40), re: Pt(0, 160), rw: Pt(-60, 260) };
+    const [src, dst] = photoSleeve('l', rig, Kd, 1); const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 0.01;
+    return src.length === 5 && near(src[1][1], K.ls) && near(src[2][1], K.le) && near(dst[1][1], Kd.ls) && near(dst[2][1], Kd.le) && near(dst[3][1], Kd.lw); })()`));
   assert('룩키 관절 → 팔 앵커 포함', ev('(() => { const K = charKp(); return !!(K.le && K.lw && K.re && K.rw && K.lh && K.la); })()'));
 
   console.log('\n== 캐릭터 성장 ==');
@@ -280,6 +316,12 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
   console.log('\n== MY ==');
   tab('my');
   assert('MY 체형 요약', document.querySelectorAll('#myBody .kv div').length === 6 && $('btnRemeasure').textContent === '다시 측정');
+  ev("state.arCoachSeen = true; window._pw = poseWarmup; poseWarmup = () => Promise.reject(new Error('오프라인')); CATALOG.filter((c) => c.isPhoto && c.ar).forEach((c) => { arAsset(c).ready = true; });");
+  click($('btnDemoPrep'));
+  for (let i = 0; i < 40 && ev('DEMO.running'); i++) await sleep(25);
+  const dp = [...document.querySelectorAll('#demoPrepList li')].map((li) => li.dataset.k + ':' + li.querySelector('i').className).join(',');
+  assert('시연 준비: 5항목 · 실패 표시 · 안내 초기화', document.querySelectorAll('#demoPrepList li').length === 5 && /pose:fail/.test(dp) && /coach:ok/.test(dp) && ev('state.arCoachSeen') === false && !$('btnDemoPrep').disabled && /샘플/.test($('demoPrepSub').textContent), dp);
+  ev('poseWarmup = window._pw;');
   assert('AR 학습 현황', $('myLearn').textContent.includes('프레임'));
   assert('주문/최근 본/찜 레일', document.querySelectorAll('#orderList .order-line').length === 1 && document.querySelectorAll('#recentRail .mini-card').length >= 1 && document.querySelectorAll('#wishRail .mini-card').length >= 1);
   $('nickInput').value = '룩핏러'; click($('btnSaveNick'));

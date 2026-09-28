@@ -18,7 +18,7 @@
       exploreCat: '전체', exploreFilter: '', exploreSort: 'recommend', searchQuery: '', activeProductId: null,
       pdpImg: 0, pdpSize: 'M', couponUsed: false,
       arRewardDate: '', measureRewardDate: '', wearExpDate: '', wearExpCount: 0, buyExpDate: '',
-      voice: true, gesture: true, arCat: '전체', arCoachSeen: false,
+      voice: true, gesture: true, fitMap: true, arCat: '전체', arCoachSeen: false,
     };
 
     const won = (n) => '₩' + Number(n).toLocaleString('ko-KR');
@@ -344,6 +344,13 @@
       const row = $('sizeRow');
       row.innerHTML = SIZES.map((s) => `<button type="button" class="size-chip ${state.pdpSize === s ? 'on' : ''}" data-size="${s}">${s === rec ? '<span class="rec">추천</span>' : ''}${s}</button>`).join('');
       row.querySelectorAll('[data-size]').forEach((b) => b.addEventListener('click', () => { state.pdpSize = b.dataset.size; renderPdpSizes(item); }));
+      const est = fitBody().est;
+      $('pdpFitParts').innerHTML = `<div class="hd">내 몸 기준 핏 · ${state.pdpSize}<small class="${est ? '' : 'm'}">${est ? '키·몸무게 추정' : '측정 치수 기준'}</small></div>` +
+        fitParts(item, state.pdpSize).map((p) => {
+          const pos = Math.max(3, Math.min(97, p.diff != null ? (p.tone === 'bad' && p.ease < 0 ? Math.min(10, 50 + p.diff * 3.2) : 50 + p.diff * 3.2) : 50 + p.ease * 1.5));
+          const sign = p.ease > 0 ? '+' : '';
+          return `<div class="r" data-part="${p.key}"><b>${p.label}</b><span class="meter ${p.diff == null ? 'info' : ''}"><i style="left:${pos}%"></i></span><span class="t fit-${p.tone}">${p.text}<em>${sign}${p.ease}cm</em></span></div>`;
+        }).join('');
       const chart = sizeChart(item);
       const si = SIZES.indexOf(state.pdpSize);
       $('sizeTable').innerHTML = '<tr><th>cm</th>' + SIZES.map((s) => `<th>${s}</th>`).join('') + '</tr>' +
@@ -604,7 +611,7 @@
       document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.dataset.screen === name));
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
       $('app').classList.toggle('dark', name === 'ar');
-      closeProduct(); closeCart();
+      closeProduct(); closeCart(); closeLooks();
       if (prev === 'ar' && name !== 'ar') closeAR();
       if (name === 'home') renderHome();
       if (name === 'explore') renderExplore();
@@ -678,10 +685,14 @@
     readFile($('arPhotoInput'), arUsePhoto);
     readFile($('measurePhotoInput'), measureFromPhoto);
     $('arCapture').addEventListener('click', arCapture);
+    $('arLooks').addEventListener('click', openLooks);
+    $('lookClose').addEventListener('click', closeLooks);
+    $('lookSheet').addEventListener('click', (e) => { if (e.target.id === 'lookSheet') closeLooks(); });
     $('arPrev').addEventListener('click', () => arStep(-1));
     $('arNext').addEventListener('click', () => arStep(1));
     $('arFull').addEventListener('click', arFullscreen);
     $('arGest').addEventListener('click', () => { state.gesture = !state.gesture; save(); arRenderToggles(); showToast(state.gesture ? '손 제스처 켜짐 · 오른손 다음, 왼손 이전, 양손 촬영' : '손 제스처 꺼짐'); });
+    $('arFit').addEventListener('click', () => { state.fitMap = !state.fitMap; save(); arRenderToggles(); showToast(state.fitMap ? '핏 표시 켜짐 · 부위별 여유를 몸 위에 보여줘요' : '핏 표시 꺼짐'); });
     $('arVoice').addEventListener('click', () => { state.voice = !state.voice; save(); arRenderToggles(); if (!state.voice && window.speechSynthesis) speechSynthesis.cancel(); showToast(state.voice ? '음성 안내 켜짐' : '음성 안내 꺼짐'); });
     document.addEventListener('keydown', arKey);
     $('btnClosetAddPhoto').addEventListener('click', () => $('garmentInput').click());
@@ -695,10 +706,12 @@
       rd.readAsDataURL(f);
     });
     $('arToCart').addEventListener('click', () => {
-      const ids = [AR.outfit.top, AR.outfit.bottom].filter(Boolean);
-      if (!ids.length) return showToast('먼저 입어볼 옷을 선택하세요');
-      ids.forEach((id) => addToCart(cartKey(id, AR.size), 1));
-      showToast(ids.length + '벌을 장바구니에 담았어요 · 사이즈 ' + AR.size);
+      const worn = [AR.outfit.top, AR.outfit.bottom].filter(Boolean);
+      if (!worn.length) return showToast('먼저 입어볼 옷을 선택하세요');
+      const ids = worn.filter((id) => !arItem(id).custom);
+      if (!ids.length) return showToast('내 옷은 장바구니에 담을 수 없어요');
+      ids.forEach((id) => addToCart(cartKey(id, arSizeOf(id)), 1));
+      showToast(ids.length + '벌을 장바구니에 담았어요 · ' + ids.map((id) => arSizeOf(id)).join(' / '));
     });
     $('btnMeasureStart').addEventListener('click', () => { if (MEASURE.running || MEASURE.countdown > 0 || MEASURE.armed) measureCancel(); else measureArm(); });
     $('btnMeasurePhoto').addEventListener('click', () => $('measurePhotoInput').click());
@@ -711,6 +724,7 @@
       save(); renderMy(); renderHome(); showToast('닉네임을 변경했어요');
     });
     $('btnRemeasure').addEventListener('click', () => openAR(null, 'measure'));
+    $('btnDemoPrep').addEventListener('click', demoPrep);
     $('btnLearnReset').addEventListener('click', () => { state.learn = learnDefaults(); save(); renderMy(); showToast('AR 인식 학습을 초기화했어요'); });
     $('btnClearCart').addEventListener('click', () => { state.cart = {}; save(); renderCartBadge(); renderCart(); showToast('장바구니를 비웠어요'); });
     function resetAppData() {
