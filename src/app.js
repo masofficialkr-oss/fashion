@@ -572,6 +572,12 @@
       $('btnMeasureStart').textContent = on ? '측정 취소' : MEASURE.armed ? '자리 잡는 중… (누르면 취소)' : state.measure ? '카메라로 다시 측정' : '카메라로 측정 시작';
       $('btnMeasureStart').classList.toggle('waiting', MEASURE.armed && !on);
     }
+    function impactHtml(im) {
+      if (!im) return '';
+      if (!im.changed.length) return `<div class="m-impact same" id="measureImpact"><b>키·몸무게 추정과 추천 사이즈가 같아요</b><small>${im.total}개 상품 확인 · 표준 체형에 가까워요</small></div>`;
+      return `<div class="m-impact" id="measureImpact"><b>내 치수로 추천 사이즈가 바뀐 상품 <em>${im.changed.length}</em>개</b><small>${im.total}개 상품 중 · 키·몸무게 추정 대비</small>` +
+        `<ul>${im.changed.slice(0, 3).map((x) => `<li data-id="${x.id}"><span>${x.name}</span><s>${x.from}</s><i>→</i><b>${x.to}</b></li>`).join('')}</ul></div>`;
+    }
     function renderMeasureResult() {
       const box = $('measureResult');
       const m = state.measure;
@@ -583,10 +589,12 @@
       box.innerHTML = `<div class="hd"><div><small>${how} · ${d.getMonth() + 1}/${d.getDate()}</small><h4>${state.analysis.type}</h4></div>` +
         `<div class="size-box"><div>상의<b>${m.sizes.top}</b></div><div>하의<b>${m.sizes.bottom}</b></div></div></div>` +
         `<div class="metrics">${['shoulder', 'chest', 'waist', 'hip', 'arm', 'leg'].map((k) => `<div class="${m.src[k] === 'camera' ? 'cam' : ''}">${MEASURE_LABEL[k]}<b>${Math.round(m.values[k])}<small>±${m.err[k]}cm</small></b></div>`).join('')}</div>` +
+        impactHtml(sizeImpact(m)) +
         `<div class="fit-tags">${state.analysis.fits.map((f) => `<span>${f}</span>`).join('')}</div>` +
         `<p class="small-txt" style="margin-top:8px">${m.method === 'input' ? '카메라로 측정하면 오차가 줄어들어요.' : '<b style="color:var(--mint)">•</b> 표시는 카메라 실측이 반영된 값이에요.'} 추정치이므로 실제 치수와 차이가 있을 수 있어요.</p>` +
         (m.hint ? `<p class="m-hint">${m.hint}</p>` : '') +
         '<div class="btns"><button type="button" class="btn line sm" id="btnMeasureRec">맞춤 상품 보기</button><button type="button" class="btn primary sm" id="btnMeasureTry">추천 옷 입어보기</button></div>';
+      box.querySelectorAll('.m-impact li[data-id]').forEach((li) => li.addEventListener('click', () => openProduct(li.dataset.id)));
       $('btnMeasureRec').addEventListener('click', () => { state.exploreSort = 'fit'; state.exploreCat = '전체'; state.exploreFilter = ''; save(); switchTab('explore'); });
       $('btnMeasureTry').addEventListener('click', () => {
         const recs = state.recommendedIds.map(arItem).filter(arCapable);
@@ -766,6 +774,7 @@
     renderAll();
     fitPhoneToViewport();
     window.addEventListener('resize', fitPhoneToViewport);
+    offlineRegister();
     setTimeout(() => {
       poseWarmup().then(() => { arEngine(POSE.label); renderMy(); }).catch(() => arEngine('AI 모델 로드 실패 · 샘플 모드'));
     }, 600);

@@ -989,6 +989,38 @@
       showToast('룩을 삭제했어요');
     }
 
+    // ---------- 오프라인: 서비스 워커가 앱·에셋·AI 모델·폰트를 기기에 보관 (file://에서는 불가) ----------
+    const OFFLINE = { reg: null };
+    function offlineSupported() { return 'serviceWorker' in navigator && /^https?:$/.test(location.protocol); }
+    function offlineRegister() {
+      if (!offlineSupported()) return null;
+      OFFLINE.reg = navigator.serviceWorker.register('./sw.js').catch(() => null);
+      return OFFLINE.reg;
+    }
+    function offlineUrls() {
+      const assets = new Set(document.documentElement.outerHTML.match(/\.\/assets\/[\w\-./]+\.(?:png|jpe?g|webp|svg|gif)/g) || []);
+      const font = document.querySelector('link[rel="stylesheet"][href*="pretendard"]');
+      return [
+        './', './index.html', ...assets,
+        MP_BASE + '/vision_bundle.mjs', MP_BASE + '/wasm/vision_wasm_internal.js', MP_BASE + '/wasm/vision_wasm_internal.wasm',
+        MP_MODEL, SEG_MODEL, ...(font ? [font.href] : []),
+      ];
+    }
+    function swAsk(msg) {
+      return navigator.serviceWorker.ready.then((reg) => new Promise((resolve) => {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = (e) => resolve(e.data);
+        reg.active.postMessage(msg, [ch.port2]);
+      }));
+    }
+    async function offlinePrecache() {
+      if (!offlineSupported()) return { skip: true, detail: '파일로 열어서 불가 · 서버 주소로 열기' };
+      if (!OFFLINE.reg) offlineRegister();
+      const r = await swAsk({ type: 'precache', urls: offlineUrls() });
+      if (r.fail.length) throw new Error(`${r.fail.length}개 저장 실패 · 온라인에서 다시`);
+      return { detail: `${r.ok}개 · ${Math.round(r.bytes / 1048576)}MB 저장` };
+    }
+
     // ---------- 시연 준비: 첫 실행 지연(모델 다운로드·셰이더 컴파일)과 권한 팝업을 시연 전에 미리 끝내 둠 ----------
     const DEMO = { running: false, rows: [] };
     function renderDemoPrep() {
@@ -1007,6 +1039,7 @@
         { k: 'seg', label: '옷 분할 모델 예열' },
         { k: 'cam', label: '카메라 권한' },
         { k: 'assets', label: `실사 옷 ${photos.length}벌 · 소매 리깅` },
+        { k: 'offline', label: '오프라인 저장 (인터넷 없이 시연)' },
         { k: 'coach', label: '혼자 쓰기 안내 다시 보이기' },
       ].map((r) => ({ ...r, st: '', detail: '' }));
       const t0 = performance.now();
@@ -1045,6 +1078,7 @@
         if (ok < photos.length) throw new Error(`${photos.length - ok}벌 불러오기 실패`);
         return { detail: `${ok}벌 준비 · 소매 ${rigged}벌` };
       });
+      await step('offline', offlinePrecache, 180000);
       await step('coach', async () => { state.arCoachSeen = false; save(); return { detail: 'AR 첫 화면에서 표시' }; });
       const okN = DEMO.rows.filter((r) => r.st === 'ok' || r.st === 'skip').length;
       sub.textContent = okN === DEMO.rows.length ? `시연 준비 완료 · ${((performance.now() - t0) / 1000).toFixed(1)}초` : `${DEMO.rows.length - okN}개 항목을 확인해 주세요 · 실패해도 샘플 모델로 시연할 수 있어요`;

@@ -303,6 +303,17 @@
     .wd img { width: 100%; height: 100%; object-fit: contain; }
     .wd .x { position: absolute; top: 0; right: 0; width: 26px; height: 26px; background: rgba(0,0,0,.55); color: #fff; font-size: .9rem; border-bottom-left-radius: 10px; }
     .m-hint { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #FFF6E5; color: #8A5A00; font-size: .68rem; font-weight: 600; line-height: 1.45; }
+    .m-impact { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--mint-soft); border: 1px solid #CDEBDF; }
+    .m-impact > b { display: block; font-size: .76rem; font-weight: 800; }
+    .m-impact > b em { font-style: normal; color: var(--mint); font-size: .9rem; }
+    .m-impact > small { display: block; margin-top: 2px; font-size: .62rem; color: var(--muted); font-weight: 600; }
+    .m-impact.same { background: #F4F4F6; border-color: #E6E6EA; }
+    .m-impact ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+    .m-impact li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; font-size: .7rem; cursor: pointer; }
+    .m-impact li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .m-impact li s { color: var(--muted); }
+    .m-impact li i { font-style: normal; color: var(--muted); }
+    .m-impact li b { color: var(--mint); font-weight: 800; }
     .fit-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; }
     .fit-tags span { font-size: .7rem; font-weight: 700; background: var(--ink); color: #fff; border-radius: 999px; padding: 4px 9px; }
     .m-result .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
@@ -1018,7 +1029,9 @@
       return spec;
     }
     // 내 치수: 측정값이 있으면 측정값, 없으면 키·몸무게 통계 추정
+    let FIT_OVERRIDE = null;
     function fitBody() {
+      if (FIT_OVERRIDE) return { v: FIT_OVERRIDE, est: false };
       if (state.measure && state.measure.values) return { v: state.measure.values, est: state.measure.method === 'input' };
       return { v: bodyPrior(Number(state.height) || 170, Number(state.weight) || 65, state.gender || 'W').v, est: true };
     }
@@ -1077,6 +1090,23 @@
     function recommendSize(item) {
       if (!item) return 'M';
       return bestSize(item);
+    }
+    function bestSizeFor(v, item) {
+      const prev = FIT_OVERRIDE;
+      FIT_OVERRIDE = v;
+      try { return bestSize(item); } finally { FIT_OVERRIDE = prev; }
+    }
+    // 측정 효과: 키·몸무게 통계 추정 대비 실측 치수로 추천 사이즈가 바뀐 상품 (큰 변화·실사 AR 상품 우선)
+    function sizeImpact(m) {
+      if (!m || !m.values || m.method === 'input') return null;
+      const prior = bodyPrior(m.height, m.weight, m.gender).v;
+      const items = CATALOG.filter((c) => c.gender === 'U' || c.gender === m.gender);
+      const changed = items.map((it) => {
+        const from = bestSizeFor(prior, it), to = bestSizeFor(m.values, it);
+        return { id: it.id, name: it.name, from, to, step: SIZES.indexOf(to) - SIZES.indexOf(from), photo: !!it.isPhoto };
+      }).filter((x) => x.step !== 0)
+        .sort((a, b) => Math.abs(b.step) - Math.abs(a.step) || b.photo - a.photo);
+      return { total: items.length, changed };
     }
     // 한 줄 핏 요약 (AR 상태·룩 비교용)
     function fitSummary(item, size) {
@@ -2147,6 +2177,38 @@
       showToast('룩을 삭제했어요');
     }
 
+    // ---------- 오프라인: 서비스 워커가 앱·에셋·AI 모델·폰트를 기기에 보관 (file://에서는 불가) ----------
+    const OFFLINE = { reg: null };
+    function offlineSupported() { return 'serviceWorker' in navigator && /^https?:$/.test(location.protocol); }
+    function offlineRegister() {
+      if (!offlineSupported()) return null;
+      OFFLINE.reg = navigator.serviceWorker.register('./sw.js').catch(() => null);
+      return OFFLINE.reg;
+    }
+    function offlineUrls() {
+      const assets = new Set(document.documentElement.outerHTML.match(/\.\/assets\/[\w\-./]+\.(?:png|jpe?g|webp|svg|gif)/g) || []);
+      const font = document.querySelector('link[rel="stylesheet"][href*="pretendard"]');
+      return [
+        './', './index.html', ...assets,
+        MP_BASE + '/vision_bundle.mjs', MP_BASE + '/wasm/vision_wasm_internal.js', MP_BASE + '/wasm/vision_wasm_internal.wasm',
+        MP_MODEL, SEG_MODEL, ...(font ? [font.href] : []),
+      ];
+    }
+    function swAsk(msg) {
+      return navigator.serviceWorker.ready.then((reg) => new Promise((resolve) => {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = (e) => resolve(e.data);
+        reg.active.postMessage(msg, [ch.port2]);
+      }));
+    }
+    async function offlinePrecache() {
+      if (!offlineSupported()) return { skip: true, detail: '파일로 열어서 불가 · 서버 주소로 열기' };
+      if (!OFFLINE.reg) offlineRegister();
+      const r = await swAsk({ type: 'precache', urls: offlineUrls() });
+      if (r.fail.length) throw new Error(`${r.fail.length}개 저장 실패 · 온라인에서 다시`);
+      return { detail: `${r.ok}개 · ${Math.round(r.bytes / 1048576)}MB 저장` };
+    }
+
     // ---------- 시연 준비: 첫 실행 지연(모델 다운로드·셰이더 컴파일)과 권한 팝업을 시연 전에 미리 끝내 둠 ----------
     const DEMO = { running: false, rows: [] };
     function renderDemoPrep() {
@@ -2165,6 +2227,7 @@
         { k: 'seg', label: '옷 분할 모델 예열' },
         { k: 'cam', label: '카메라 권한' },
         { k: 'assets', label: `실사 옷 ${photos.length}벌 · 소매 리깅` },
+        { k: 'offline', label: '오프라인 저장 (인터넷 없이 시연)' },
         { k: 'coach', label: '혼자 쓰기 안내 다시 보이기' },
       ].map((r) => ({ ...r, st: '', detail: '' }));
       const t0 = performance.now();
@@ -2203,6 +2266,7 @@
         if (ok < photos.length) throw new Error(`${photos.length - ok}벌 불러오기 실패`);
         return { detail: `${ok}벌 준비 · 소매 ${rigged}벌` };
       });
+      await step('offline', offlinePrecache, 180000);
       await step('coach', async () => { state.arCoachSeen = false; save(); return { detail: 'AR 첫 화면에서 표시' }; });
       const okN = DEMO.rows.filter((r) => r.st === 'ok' || r.st === 'skip').length;
       sub.textContent = okN === DEMO.rows.length ? `시연 준비 완료 · ${((performance.now() - t0) / 1000).toFixed(1)}초` : `${DEMO.rows.length - okN}개 항목을 확인해 주세요 · 실패해도 샘플 모델로 시연할 수 있어요`;
@@ -3683,6 +3747,12 @@
       $('btnMeasureStart').textContent = on ? '측정 취소' : MEASURE.armed ? '자리 잡는 중… (누르면 취소)' : state.measure ? '카메라로 다시 측정' : '카메라로 측정 시작';
       $('btnMeasureStart').classList.toggle('waiting', MEASURE.armed && !on);
     }
+    function impactHtml(im) {
+      if (!im) return '';
+      if (!im.changed.length) return `<div class="m-impact same" id="measureImpact"><b>키·몸무게 추정과 추천 사이즈가 같아요</b><small>${im.total}개 상품 확인 · 표준 체형에 가까워요</small></div>`;
+      return `<div class="m-impact" id="measureImpact"><b>내 치수로 추천 사이즈가 바뀐 상품 <em>${im.changed.length}</em>개</b><small>${im.total}개 상품 중 · 키·몸무게 추정 대비</small>` +
+        `<ul>${im.changed.slice(0, 3).map((x) => `<li data-id="${x.id}"><span>${x.name}</span><s>${x.from}</s><i>→</i><b>${x.to}</b></li>`).join('')}</ul></div>`;
+    }
     function renderMeasureResult() {
       const box = $('measureResult');
       const m = state.measure;
@@ -3694,10 +3764,12 @@
       box.innerHTML = `<div class="hd"><div><small>${how} · ${d.getMonth() + 1}/${d.getDate()}</small><h4>${state.analysis.type}</h4></div>` +
         `<div class="size-box"><div>상의<b>${m.sizes.top}</b></div><div>하의<b>${m.sizes.bottom}</b></div></div></div>` +
         `<div class="metrics">${['shoulder', 'chest', 'waist', 'hip', 'arm', 'leg'].map((k) => `<div class="${m.src[k] === 'camera' ? 'cam' : ''}">${MEASURE_LABEL[k]}<b>${Math.round(m.values[k])}<small>±${m.err[k]}cm</small></b></div>`).join('')}</div>` +
+        impactHtml(sizeImpact(m)) +
         `<div class="fit-tags">${state.analysis.fits.map((f) => `<span>${f}</span>`).join('')}</div>` +
         `<p class="small-txt" style="margin-top:8px">${m.method === 'input' ? '카메라로 측정하면 오차가 줄어들어요.' : '<b style="color:var(--mint)">•</b> 표시는 카메라 실측이 반영된 값이에요.'} 추정치이므로 실제 치수와 차이가 있을 수 있어요.</p>` +
         (m.hint ? `<p class="m-hint">${m.hint}</p>` : '') +
         '<div class="btns"><button type="button" class="btn line sm" id="btnMeasureRec">맞춤 상품 보기</button><button type="button" class="btn primary sm" id="btnMeasureTry">추천 옷 입어보기</button></div>';
+      box.querySelectorAll('.m-impact li[data-id]').forEach((li) => li.addEventListener('click', () => openProduct(li.dataset.id)));
       $('btnMeasureRec').addEventListener('click', () => { state.exploreSort = 'fit'; state.exploreCat = '전체'; state.exploreFilter = ''; save(); switchTab('explore'); });
       $('btnMeasureTry').addEventListener('click', () => {
         const recs = state.recommendedIds.map(arItem).filter(arCapable);
@@ -3877,6 +3949,7 @@
     renderAll();
     fitPhoneToViewport();
     window.addEventListener('resize', fitPhoneToViewport);
+    offlineRegister();
     setTimeout(() => {
       poseWarmup().then(() => { arEngine(POSE.label); renderMy(); }).catch(() => arEngine('AI 모델 로드 실패 · 샘플 모드'));
     }, 600);

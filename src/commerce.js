@@ -44,7 +44,9 @@
       return spec;
     }
     // 내 치수: 측정값이 있으면 측정값, 없으면 키·몸무게 통계 추정
+    let FIT_OVERRIDE = null;
     function fitBody() {
+      if (FIT_OVERRIDE) return { v: FIT_OVERRIDE, est: false };
       if (state.measure && state.measure.values) return { v: state.measure.values, est: state.measure.method === 'input' };
       return { v: bodyPrior(Number(state.height) || 170, Number(state.weight) || 65, state.gender || 'W').v, est: true };
     }
@@ -103,6 +105,23 @@
     function recommendSize(item) {
       if (!item) return 'M';
       return bestSize(item);
+    }
+    function bestSizeFor(v, item) {
+      const prev = FIT_OVERRIDE;
+      FIT_OVERRIDE = v;
+      try { return bestSize(item); } finally { FIT_OVERRIDE = prev; }
+    }
+    // 측정 효과: 키·몸무게 통계 추정 대비 실측 치수로 추천 사이즈가 바뀐 상품 (큰 변화·실사 AR 상품 우선)
+    function sizeImpact(m) {
+      if (!m || !m.values || m.method === 'input') return null;
+      const prior = bodyPrior(m.height, m.weight, m.gender).v;
+      const items = CATALOG.filter((c) => c.gender === 'U' || c.gender === m.gender);
+      const changed = items.map((it) => {
+        const from = bestSizeFor(prior, it), to = bestSizeFor(m.values, it);
+        return { id: it.id, name: it.name, from, to, step: SIZES.indexOf(to) - SIZES.indexOf(from), photo: !!it.isPhoto };
+      }).filter((x) => x.step !== 0)
+        .sort((a, b) => Math.abs(b.step) - Math.abs(a.step) || b.photo - a.photo);
+      return { total: items.length, changed };
     }
     // 한 줄 핏 요약 (AR 상태·룩 비교용)
     function fitSummary(item, size) {

@@ -247,6 +247,8 @@ async function waitFor(page, fn, timeout = 60000, arg) {
     assert('치수 범위 타당 (172/55 여성)', v.shoulder > 32 && v.shoulder < 50 && v.chest > 70 && v.chest < 115 && v.waist > 55 && v.waist < 100 && v.hip > 75 && v.hip < 115 && v.leg > 65 && v.leg < 100, JSON.stringify(v));
     assert('사이즈 · 체형 결과', !!(m.sizes.top && m.sizes.bottom) && !!(await page.evaluate(() => state.analysis && state.analysis.type)));
     assert('팔이 몸에 붙은 영상 → 폭은 입력값 + A자 자세 안내', m.src.chest === 'input' && /A자/.test(m.hint || '') && (await page.$$('#measureResult .m-hint')).length === 1, m.hint);
+    const imp = await page.evaluate(() => { const el = document.getElementById('measureImpact'), im = sizeImpact(state.measure); return { txt: el ? el.textContent : '', n: im ? im.changed.length : -1, li: el ? el.querySelectorAll('li').length : 0 }; });
+    assert('측정 효과 카드 (키·몸무게 추정 대비 추천 사이즈 변화)', imp.n >= 0 && (imp.n ? /바뀐 상품/.test(imp.txt) && imp.li === Math.min(3, imp.n) : /같아요/.test(imp.txt)), `${imp.n}개 · ${imp.txt.slice(0, 60)}`);
   }
   await page.evaluate(() => { document.getElementById('arMeasurePanel').scrollTop = 500; });
   await sleep(400);
@@ -330,9 +332,9 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   await shot('12-my-wardrobe');
   await page.evaluate(() => { state.arCoachSeen = true; });
   await page.click('#btnDemoPrep');
-  const tPrep = await waitFor(page, () => !DEMO.running && DEMO.rows.length === 5, 60000);
+  const tPrep = await waitFor(page, () => !DEMO.running && DEMO.rows.length === 6, 200000);
   const prep = await page.evaluate(() => ({ rows: DEMO.rows.map((r) => r.k + ':' + r.st + '(' + r.detail + ')').join(', '), all: DEMO.rows.every((r) => r.st === 'ok'), coach: state.arCoachSeen, sub: document.getElementById('demoPrepSub').textContent }));
-  assert('시연 준비: 모델 예열 · 카메라 · 실사 옷 리깅 · 안내 초기화 전부 통과', tPrep >= 0 && prep.all && prep.coach === false && /완료/.test(prep.sub), prep.rows);
+  assert('시연 준비: 모델 예열 · 카메라 · 실사 옷 리깅 · 오프라인 저장 · 안내 초기화 전부 통과', tPrep >= 0 && prep.all && prep.coach === false && /완료/.test(prep.sub), prep.rows);
   await page.evaluate(() => document.querySelector('.demo-prep').scrollIntoView());
   await shot('12b-demo-prep');
   await page.click('.tab[data-tab="home"]');
@@ -354,11 +356,67 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   assert('진입 직후 이탈해도 카메라 누수 없음', !race.open && race.stream === null && race.mode === null && !race.live, JSON.stringify(race));
   await sleep(400);
   await shot('14-home-after');
-
   assert('콘솔/페이지 에러 없음', errors.length === 0, errors.slice(0, 5).join(' | '));
+
+  console.log('\n== 폰 시연용 HTTPS (serve.js --https) ==');
+  {
+    const { startHttps, lanIPs } = require('./serve');
+    const { server: hs, urls } = await startHttps(PORT + 100);
+    const lan = urls.find((u) => !/localhost/.test(u)) || urls[0];
+    const hp = await browser.newPage();
+    const hc = await hp.createCDPSession();
+    await hc.send('Security.setIgnoreCertificateErrors', { ignore: true });
+    await browser.defaultBrowserContext().overridePermissions(new URL(lan).origin, ['camera']);
+    await hp.goto(lan + '/index.html', { waitUntil: 'load', timeout: 60000 });
+    const sec = await hp.evaluate(async () => {
+      let cam = 'none';
+      try { const s = await navigator.mediaDevices.getUserMedia({ video: true }); cam = s.getVideoTracks().length ? 'ok' : 'none'; s.getTracks().forEach((t) => t.stop()); } catch (e) { cam = e.name; }
+      return { secure: window.isSecureContext, app: !!document.getElementById('app'), cam };
+    });
+    assert('HTTPS · 같은 와이파이 IP로 열림 → 보안 컨텍스트 · 카메라 허용', sec.secure && sec.app && sec.cam === 'ok' && lanIPs().length > 0, `${lan} ${JSON.stringify(sec)}`);
+    await hp.close();
+    hs.close();
+  }
+
+  console.log('\n== 오프라인 시연 (서버 종료 + 네트워크 차단 후 새로고침) ==');
+  const swTarget = await browser.waitForTarget((t) => t.type() === 'service_worker', { timeout: 10000 }).catch(() => null);
+  assert('서비스 워커 등록', !!swTarget);
+  if (swTarget) {
+    const swCdp = await swTarget.createCDPSession();
+    await swCdp.send('Network.enable');
+    await swCdp.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await page.setOfflineMode(true);
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+    await page.evaluate(() => swAsk({ type: 'reset-stats' }));
+    errors.length = 0;
+    await page.reload({ waitUntil: 'load', timeout: 60000 });
+    const tOff = await waitFor(page, () => typeof POSE !== 'undefined' && !!POSE.kind, 60000);
+    const offEng = await page.evaluate(() => ({ kind: POSE.kind, online: navigator.onLine, ctrl: !!navigator.serviceWorker.controller }));
+    assert('오프라인 새로고침 → 앱 열림 · MediaPipe 로딩', tOff >= 0 && offEng.kind === 'mediapipe' && !offEng.online && offEng.ctrl, JSON.stringify(offEng) + ` ${tOff}ms`);
+    await page.evaluate(() => { switchTab('ar'); arSetMode('sample'); });
+    const tOffAr = await waitFor(page, () => AR.mode === 'sample' && !!AR.kp, 30000);
+    const tOffPhoto = await waitFor(page, () => CATALOG.filter((c) => c.isPhoto && c.ar).every((it) => arAsset(it).ready), 15000);
+    assert('오프라인 샘플 AR 추적 · 실사 옷 로드', tOffAr >= 0 && tOffPhoto >= 0, `추적 ${tOffAr}ms · 옷 ${tOffPhoto}ms`);
+    const offSeg = await page.evaluate(async () => {
+      const img = new Image();
+      img.src = './assets/shop/item_7.png';
+      await img.decode();
+      const r = await garmentExtract(img);
+      return Array.isArray(r) ? 'ok:' + r.length : String(r);
+    });
+    assert('오프라인 사진 옷 추출 (분할 모델)', /^ok:[1-9]/.test(offSeg), offSeg);
+    const offFont = await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "Pretendard Variable"', '가'); });
+    const swStats = await page.evaluate(() => swAsk({ type: 'stats' }));
+    assert('오프라인 폰트 · 외부 요청 전부 캐시 적중', offFont && swStats.miss.length === 0 && swStats.hit > 0, `hit ${swStats.hit} miss ${swStats.miss.slice(0, 3).join(' ')}`);
+    await page.evaluate(() => { openAR(['p04', 'p05']); });
+    await sleep(1500);
+    await (await page.$('#app')).screenshot({ path: path.join(OUT, '15-offline-ar.png') });
+    assert('오프라인 중 페이지 에러 없음', !errors.some((e) => /^pageerror/.test(e)), errors.slice(0, 3).join(' | '));
+  }
   console.log('\nscreenshots:', OUT);
   console.log('Passed:', passed, 'Failed:', failed);
   await browser.close();
-  server.close();
+  if (server.listening) server.close();
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

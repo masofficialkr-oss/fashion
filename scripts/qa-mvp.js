@@ -231,6 +231,16 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
     assert('추천 6개 재계산', ev('state.recommendedIds.length') === 6);
     assert('핏 엔진이 측정 치수 사용', ev('fitBody().v.chest') === m.values.chest && ev('fitBody().v.hip') === m.values.hip);
     assert('상품별 추천 = 부위별 핏 점수 최적', ev("CATALOG.every((c) => recommendSize(c) === bestSize(c))") && ev("new Set(CATALOG.map((c) => recommendSize(c))).size") >= 2);
+    assert('입력값 추정은 측정 효과 카드 없음', !$('measureImpact') && ev('sizeImpact(state.measure)') === null);
+    ev("window._inputM = state.measure; window._imm = { ...state.measure, method: 'camera', frames: 30, values: { ...bodyPrior(176, 72, 'M').v } };");
+    assert('측정 효과: 실측 = 통계 추정이면 바뀐 상품 0', ev('sizeImpact(_imm).changed.length') === 0 && ev('sizeImpact(_imm).total') > 50);
+    ev("_imm.values = { ..._imm.values, chest: _imm.values.chest + 7, waist: _imm.values.waist + 7, hip: _imm.values.hip + 6 }; state.measure = _imm; renderMeasureResult();");
+    const lis = [...document.querySelectorAll('#measureImpact li')];
+    assert('측정 효과 카드: 바뀐 상품 수 · 예시 3개(이전 → 이후)', /바뀐 상품/.test($('measureImpact') ? $('measureImpact').textContent : '') && lis.length === 3 && lis.every((li) => li.querySelector('s').textContent !== li.querySelector('b').textContent), lis.map((l) => l.textContent).join(' | '));
+    assert('측정 효과 계산 후 핏 엔진은 현재 치수로 복귀', ev('fitBody().v.chest') === ev('_imm.values.chest') && ev(`recommendSize(arItem('${lis[0] && lis[0].dataset.id}'))`) === (lis[0] && lis[0].querySelector('b').textContent));
+    click(lis[0]);
+    assert('예시 상품 누르면 상세 열림', ev('state.activeProductId') === lis[0].dataset.id);
+    ev('closeProduct(); state.measure = _inputM; renderMeasureResult();');
     click(document.querySelector('#arSeg [data-view="tryon"]'));
     assert('시착 뷰 복귀', $('arMeasurePanel').hidden && !$('arTryPanel').hidden);
   }
@@ -320,8 +330,12 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
   click($('btnDemoPrep'));
   for (let i = 0; i < 40 && ev('DEMO.running'); i++) await sleep(25);
   const dp = [...document.querySelectorAll('#demoPrepList li')].map((li) => li.dataset.k + ':' + li.querySelector('i').className).join(',');
-  assert('시연 준비: 5항목 · 실패 표시 · 안내 초기화', document.querySelectorAll('#demoPrepList li').length === 5 && /pose:fail/.test(dp) && /coach:ok/.test(dp) && ev('state.arCoachSeen') === false && !$('btnDemoPrep').disabled && /샘플/.test($('demoPrepSub').textContent), dp);
+  assert('시연 준비: 6항목 · 실패 표시 · 안내 초기화 · 서비스 워커 없으면 오프라인 건너뜀', document.querySelectorAll('#demoPrepList li').length === 6 && /pose:fail/.test(dp) && /offline:skip/.test(dp) && /coach:ok/.test(dp) && ev('state.arCoachSeen') === false && !$('btnDemoPrep').disabled && /샘플/.test($('demoPrepSub').textContent), dp);
   ev('poseWarmup = window._pw;');
+  const offU = ev('offlineUrls()');
+  assert('오프라인 목록: 앱 · 에셋 전부 · AI 엔진/모델 · 폰트', offU.includes('./index.html') && offU.includes('./assets/char/looky.png') && offU.filter((u) => /^\.\/assets\/ar\//.test(u)).length === ev('Object.keys(AR_PHOTO_ANCHORS).length') && offU.includes(ev('MP_MODEL')) && offU.includes(ev('SEG_MODEL')) && offU.some((u) => /vision_wasm_internal\.wasm$/.test(u)) && offU.some((u) => /pretendard.*\.css$/.test(u)), offU.length + '');
+  const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+  assert('서비스 워커: 같은 출처 네트워크 우선 · CDN 캐시 우선 · 사전 저장', /appFetch[\s\S]*fetch\(req\)[\s\S]*caches\.match/.test(sw) && /cdnFetch[\s\S]*caches\.match\(req\)[\s\S]*fetch\(req\)/.test(sw) && /'precache'/.test(sw));
   assert('AR 학습 현황', $('myLearn').textContent.includes('프레임'));
   assert('주문/최근 본/찜 레일', document.querySelectorAll('#orderList .order-line').length === 1 && document.querySelectorAll('#recentRail .mini-card').length >= 1 && document.querySelectorAll('#wishRail .mini-card').length >= 1);
   $('nickInput').value = '룩핏러'; click($('btnSaveNick'));

@@ -303,6 +303,17 @@
     .wd img { width: 100%; height: 100%; object-fit: contain; }
     .wd .x { position: absolute; top: 0; right: 0; width: 26px; height: 26px; background: rgba(0,0,0,.55); color: #fff; font-size: .9rem; border-bottom-left-radius: 10px; }
     .m-hint { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #FFF6E5; color: #8A5A00; font-size: .68rem; font-weight: 600; line-height: 1.45; }
+    .m-impact { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--mint-soft); border: 1px solid #CDEBDF; }
+    .m-impact > b { display: block; font-size: .76rem; font-weight: 800; }
+    .m-impact > b em { font-style: normal; color: var(--mint); font-size: .9rem; }
+    .m-impact > small { display: block; margin-top: 2px; font-size: .62rem; color: var(--muted); font-weight: 600; }
+    .m-impact.same { background: #F4F4F6; border-color: #E6E6EA; }
+    .m-impact ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+    .m-impact li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; font-size: .7rem; cursor: pointer; }
+    .m-impact li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .m-impact li s { color: var(--muted); }
+    .m-impact li i { font-style: normal; color: var(--muted); }
+    .m-impact li b { color: var(--mint); font-weight: 800; }
     .fit-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; }
     .fit-tags span { font-size: .7rem; font-weight: 700; background: var(--ink); color: #fff; border-radius: 999px; padding: 4px 9px; }
     .m-result .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
