@@ -24,6 +24,7 @@
 | jsdom 기능 QA | `node scripts/qa-mvp.js` | 구조·삭제 기능, 카탈로그, 탐색, 상세·장바구니, AR 탭, 측정 수식(전신/근거리/반신 판정, 골반 비율 학습), 필터·학습, 핏 엔진·AR 핏 맵, 실사 소매 리깅 좌표, 룩 앨범, 시연 준비 · 오프라인 목록 · 서비스 워커, 측정 효과, 성장, 옷장, MY, 마이그레이션, 초기화 (134개) |
 | 화면 감사 | `node scripts/qa-audit.js` | 실제 Chrome에서 16개 화면 순회, 넘침·깨진 이미지·작은 터치 영역·토스트 잘림, AR PC 조작 요소, 실사 소매 픽셀 검사, 새로고침 유지, 창 축소 (85개) |
 | AR E2E | `node scripts/e2e-ar.js` | 가짜 웹캠(y4m)으로 MediaPipe 실시간 추적, 떨림, 의상 워핑, PC 조작(칩·버튼·키보드·휠·드래그), 손 제스처·타이머, 룩 앨범 저장, 자동 시작 측정, 사진 → 내 옷 등록(소매 리깅 포함), 측정 효과 카드, 시연 준비(오프라인 저장 포함), 카메라 해제, 룩키 착용, HTTPS LAN 접속, 서버 종료 · 네트워크 차단 후 오프라인 새로고침 (55개) |
+| 배포(Vercel) | `node scripts/build.js` 후 `npx vercel deploy --prod --scope fashion18` | https://fashiongame.vercel.app 갱신. GitHub 자동 배포는 연결되어 있지 않음. `.vercelignore`로 `index.html` · `sw.js` · `assets/`만 올림 |
 | 로컬 서버 | `node scripts/serve.js [--https]` | http://localhost:8765. `--https`면 https://<와이파이 IP>:8766도 띄움(자체 서명 인증서를 `.cert/`에 자동 생성, openssl 필요) |
 | 상품 착용컷 → AR 에셋 | `node scripts/build-garments.js assets/shop/item_9.png:look_e` | 앱과 같은 추출 파이프라인으로 `assets/ar/*.png` 생성 + `AR_PHOTO_ANCHORS` 갱신 |
 | 실사 옷 팔 관절 추가 | `node scripts/build-garments.js --rig assets/shop/item_7.png:look_a` | 원본 사진 포즈 → 어깨·골반 4점 닮음변환 → 팔꿈치·손목을 앵커에 추가(PNG는 그대로) |
