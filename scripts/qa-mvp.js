@@ -160,6 +160,87 @@ catch (_) { JSDOM = require('jsdom').JSDOM; }
   W.eval(`localStorage.setItem(STORAGE_KEY, JSON.stringify({ cart: { m01: 2, '${arCard.dataset.id}': 1 }, wishlist: ['w03', '${arCard.dataset.id}'], ownedIds: ['m05'], recentIds: ['m02'] })); load();`);
   assert('stale ids dropped + cart migrated', W.eval(`JSON.stringify(state.cart) === JSON.stringify({ '${arCard.dataset.id}::M': 1 }) && state.wishlist.length === 1 && state.ownedIds.length === 0 && state.recentIds.length === 0`));
   W.eval('save(); renderAll();');
+  W.eval(`localStorage.setItem(STORAGE_KEY, JSON.stringify({ recommendedIds: ['top_01', 'g001'], selectedKind: 'fit', selectedId: 'top_01' })); load();`);
+  assert('legacy FIT recommendations dropped', W.eval("JSON.stringify(state.recommendedIds) === '[\"g001\"]' && state.selectedKind === 'rec' && state.selectedId === null"));
+  W.eval('save(); renderAll();');
+
+  console.log('\n== Phase 3: body input · closet recs · quests · PDP · orders ==');
+  const hIn = document.getElementById('heightInput');
+  hIn.focus(); hIn.value = '183'; hIn.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  W.eval('renderHeader()');
+  assert('typed height survives re-render', hIn.value === '183' && W.eval('state.height') === 183);
+  hIn.value = '260'; hIn.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert('height clamped to 210 on commit', hIn.value === '210' && W.eval('state.height') === 210);
+  hIn.value = ''; hIn.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert('empty height reverts', hIn.value === '210' && W.eval('state.height') === 210);
+  hIn.blur();
+  W.eval("state.height = 172; state.weight = 66; state.gender = 'W'; save(); renderHeader();");
+
+  W.eval("state.analysis = { type: '스트레이트', fits: ['와이드/스트레이트 하의', '크롭 재킷'], reasons: [] }; recommendFromAnalysis();");
+  const recCards = [...document.querySelectorAll('#closetGrid .item-card[data-kind="rec"]')];
+  assert('closet recs are 6 real products', recCards.length === 6 && recCards.every((c) => W.eval(`!!CATALOG.find((x) => x.id === '${c.dataset.id}')`)));
+  assert('recs respect gender (W/U only)', W.eval("state.recommendedIds.every((id) => ['W', 'U'].includes(CATALOG.find((c) => c.id === id).gender))"));
+  assert('recs mix top + bottom', W.eval("(() => { const k = state.recommendedIds.map((id) => CATALOG.find((c) => c.id === id).category); return k.filter((x) => x === 'top').length === 3 && k.filter((x) => x === 'bottom').length === 3; })()"));
+  assert('rec card image = product image', recCards.every((c) => c.querySelector('img').getAttribute('src') === W.eval(`CATALOG.find((x) => x.id === '${c.dataset.id}').image`)));
+  const arRec = recCards.find((c) => W.eval(`!!CATALOG.find((x) => x.id === '${c.dataset.id}').ar`));
+  click(arRec);
+  assert('rec selection shows AR button', document.getElementById('btnClosetAR').style.display === 'block');
+  const recId = arRec.dataset.id;
+  W.eval("state.wearDate = ''");
+  click(document.getElementById('btnWear'));
+  assert('wear rec sets wornCatalog + equipped', W.eval(`(() => { const it = CATALOG.find((c) => c.id === '${recId}'); const s = it.category === 'bottom' ? 'bottomId' : 'topId'; return state.wornCatalog[s] === it.id && state.equipped[s] === it.fitId; })()`));
+  assert('home equip label uses product name', document.getElementById('equipMeta').textContent.includes(W.eval(`CATALOG.find((c) => c.id === '${recId}').name`)));
+  assert('wear quest completes', document.getElementById('questWear').classList.contains('done') && /\d\/4 완료/.test(document.getElementById('dailyQuest').textContent));
+  assert('attendance quest done on boot', W.eval('state.attendDate === todayKey()') && document.getElementById('questAttend').classList.contains('done'));
+  W.eval("state.exploreExpDate = todayKey(); state.exploreExpCount = 3; renderQuest();");
+  assert('explore quest shows live count', document.querySelector('#questExplore .meta').textContent.startsWith('3/5'));
+
+  assert('reviews have no duplicate text', W.eval("CATALOG.every((c) => new Set(reviewData(c).list.map((r) => r.text)).size === 3)"));
+  assert('match never pairs summer with winter', W.eval("CATALOG.every((c) => { const m = matchFor(c); return !m || seasonOk(c, m); })"));
+  assert('match complements kind', W.eval("CATALOG.every((c) => { const m = matchFor(c); if (!m) return true; return c.kind === 'bottom' ? m.kind !== 'bottom' && m.kind !== 'dress' : c.kind === 'dress' ? m.kind === 'outer' : m.kind === 'bottom'; })"));
+  W.eval("openProduct('p01')");
+  const matchAr = document.querySelector('#modalMatch [data-match="ar"]');
+  assert('PDP match card + joint AR button', !!document.querySelector('#modalMatch .match-card') && !!matchAr);
+  click(matchAr);
+  assert('joint AR wears both', W.eval("AR.outfit.top === 'p01' && !!AR.outfit.bottom"));
+  click(document.getElementById('arClose'));
+  await new Promise((r) => setTimeout(r, 30));
+  W.eval("closeProduct()");
+
+  const gSel = document.getElementById('genderSelect');
+  gSel.value = 'M'; gSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert('gender change re-runs recommendations', W.eval("state.recommendedIds.length === 6 && state.recommendedIds.every((id) => ['M', 'U'].includes(CATALOG.find((c) => c.id === id).gender))"));
+  W.eval("state.searchQuery = '데님'; save(); load();");
+  document.getElementById('searchInput').value = '';
+  W.eval('renderExplore()');
+  assert('saved search query restored into input', document.getElementById('searchInput').value === '데님');
+
+  W.eval("state.searchQuery = 'zzzz'; renderExplore();");
+  const resetEx = document.getElementById('btnExploreReset');
+  assert('empty explore offers reset', !!resetEx && document.getElementById('searchInput').value === 'zzzz');
+  click(resetEx);
+  assert('explore reset restores list', W.eval("state.searchQuery === ''") && document.querySelectorAll('#exploreGrid .shop-card').length === W.eval('CATALOG.length'));
+
+  console.log('\n== Arm-tracked sleeves ==');
+  const kpArms = W.eval(`(() => {
+    const base = [['left_shoulder', 260, 200], ['right_shoulder', 140, 200], ['left_hip', 240, 380], ['right_hip', 160, 380]];
+    const arms = [['left_elbow', 330, 120], ['left_wrist', 360, 20], ['right_elbow', 60, 200], ['right_wrist', 70, 900]];
+    const K = arKeypoints([...base, ...arms].map(([name, x, y]) => ({ name, x, y, score: .9 })), (x, y) => Pt(x, y));
+    return { le: !!K.le, lw: !!K.lw, re: !!K.re, rw: !!K.rw };
+  })()`);
+  assert('elbow/wrist anchors + implausible wrist dropped', kpArms.le && kpArms.lw && kpArms.re && !kpArms.rw);
+  assert('smoothing adopts newly visible joints', W.eval("(() => { AR.kp = { ls: Pt(0, 0) }; arSmooth({ ls: Pt(10, 0), le: Pt(5, 5) }); const ok = AR.kp.ls.x === 5 && AR.kp.le.x === 5; arSmooth({ ls: Pt(10, 0) }); return ok && !AR.kp.le; })()"));
+  assert('sleeve layers split (tops only)', W.eval("(() => { const t = CATALOG.find((c) => c.typeKey === 'longsleeve'), b = CATALOG.find((c) => c.typeKey === 'wide'); const n = (m) => (garmentSVG(t, m).match(/<path/g) || []).length; return n('ar-l') > 0 && n('ar-l') === n('ar-r') && n('ar-body') + n('ar-l') * 2 === n('ar') && !garmentParts(b.typeKey).some((p) => p.sl); })()"));
+  assert('sleeve strip keeps torso side in mirror view', W.eval(`(() => {
+    const K = { ls: Pt(100, 100), rs: Pt(300, 100), le: Pt(60, 260) };
+    const [src, dst] = sleeveStrips('l', K, 1);
+    const inward = (g, other) => { const a = g[1][2], b = g[1][0]; return ((a.x - b.x) * (other.x - b.x)) > 0; };
+    return src.length === 5 && dst[0].length === 3 && inward(src, Pt(180, 240)) && inward(dst, K.rs);
+  })()`));
+
+  W.eval("state.cart = {}; state.orders = []; addToCart(cartKey('g001', 'M'), 2);");
+  click(document.getElementById('btnCheckout'));
+  assert('checkout records order', W.eval("state.orders.length === 1 && state.orders[0].lines[0].qty === 2") && document.querySelectorAll('#orderList .order-line').length === 1);
 
   document.querySelector('.tab[data-tab="settings"]').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await new Promise((r) => setTimeout(r, 20));
