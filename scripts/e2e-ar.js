@@ -161,6 +161,68 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   await page.evaluate(() => { AR.outfit = { top: null, bottom: null }; arPut(arItem('p04')); arPut(arItem('p05')); arRenderRail(); });
   await sleep(1000);
   await shot('04-ar-camera-look');
+  assert('처음 카메라 진입 시 혼자 사용 코치 1회', await page.evaluate(() => state.arCoachSeen === true));
+
+  console.log('\n== PC 조작: 카테고리 · 이전/다음 · 키보드 · 휠 · 드래그 ==');
+  const cats = await page.$$eval('#arCats [data-cat]', (b) => b.map((x) => x.textContent));
+  assert('레일 카테고리 칩', ['전체', '상의', '하의'].every((c) => cats.includes(c)), cats.join(','));
+  await page.evaluate(() => document.querySelector('#arCats [data-cat="하의"]').click());
+  await sleep(200);
+  const bottoms = await page.evaluate(() => [...document.querySelectorAll('#arRail [data-ar]')].map((b) => arItem(b.dataset.ar).ar.slot));
+  assert('하의 칩 → 레일에 하의만', bottoms.length > 3 && bottoms.every((s) => s === 'bottom'), bottoms.length + '개');
+  const b0 = await page.evaluate(() => AR.outfit.bottom);
+  await page.click('#arNext');
+  await sleep(200);
+  const b1 = await page.evaluate(() => ({ bottom: AR.outfit.bottom, focus: AR.focusId, now: document.getElementById('arNow').textContent }));
+  assert('› 버튼 → 다음 하의 착용 + 이름 표시', b1.bottom && b1.bottom !== b0 && b1.focus === b1.bottom && b1.now.length > 3, b1.now);
+  await page.keyboard.press('ArrowRight');
+  await sleep(150);
+  const b2 = await page.evaluate(() => AR.outfit.bottom);
+  const s0 = await page.evaluate(() => AR.size);
+  await page.keyboard.press('ArrowUp');
+  const s1 = await page.evaluate(() => AR.size);
+  assert('키보드 → 다음 옷 / ↑ 사이즈', b2 !== b1.bottom && s1 !== s0, `${s0}→${s1}`);
+  await page.evaluate(() => { document.querySelector('#arCats [data-cat="전체"]').click(); document.getElementById('arRail').scrollLeft = 0; });
+  await sleep(200);
+  const rail = await page.$('#arRail');
+  const rb = await rail.boundingBox();
+  await page.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2);
+  await page.mouse.wheel({ deltaY: 240 });
+  await sleep(250);
+  const wheelLeft = await page.evaluate(() => document.getElementById('arRail').scrollLeft);
+  assert('세로 휠 → 레일 가로 스크롤', wheelLeft > 100, wheelLeft + 'px');
+  const before = await page.evaluate(() => JSON.stringify(AR.outfit));
+  await page.mouse.move(rb.x + rb.width * 0.8, rb.y + rb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rb.x + rb.width * 0.5, rb.y + rb.height / 2, { steps: 6 });
+  await page.mouse.move(rb.x + rb.width * 0.2, rb.y + rb.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await sleep(200);
+  const drag = await page.evaluate((w) => ({ left: document.getElementById('arRail').scrollLeft - w, outfit: JSON.stringify(AR.outfit) }), wheelLeft);
+  assert('마우스 드래그 → 레일 이동 (끌기 후 클릭 무시)', drag.left > 80 && drag.outfit === before, Math.round(drag.left) + 'px');
+
+  console.log('\n== 혼자 사용: 손 제스처 · 타이머 촬영 ==');
+  const gest = await page.evaluate(() => {
+    const K = JSON.parse(JSON.stringify(AR.kp));
+    const sw = Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y);
+    K.re = { x: K.rs.x - sw * 0.2, y: K.rs.y - sw * 0.3 }; K.rw = { x: K.rs.x - sw * 0.25, y: K.rs.y - sw * 0.8 };
+    AR.gest = { side: null, since: 0, prog: 0, lock: false };
+    const f0 = AR.focusId, t = performance.now() + 5000;
+    arGesture(K, t); const mid = AR.gest.prog;
+    arGesture(K, t + 300); const half = AR.gest.prog;
+    arGesture(K, t + GESTURE_HOLD + 20);
+    const f1 = AR.focusId;
+    arGesture(K, t + GESTURE_HOLD + 400);
+    const f2 = AR.focusId;
+    return { mid, half, changed: f1 !== f0, locked: f2 === f1 };
+  });
+  assert('오른손 들기 0.6초 → 다음 옷 (진행 링 · 1회만)', gest.half > 0.3 && gest.half < 1 && gest.changed && gest.locked, JSON.stringify(gest));
+  await page.evaluate(() => { AR.gest = { side: null, since: 0, prog: 0, lock: false }; });
+  await page.keyboard.press('t');
+  const tm = await page.evaluate(() => ({ timer: AR.timer, shown: document.getElementById('arTimer').classList.contains('show') }));
+  await sleep(3400);
+  const tmDone = await page.evaluate(() => ({ timer: AR.timer, toast: document.getElementById('toast').textContent }));
+  assert('T / 양손 → 3초 타이머 후 자동 촬영', tm.timer === 3 && tm.shown && !tmDone.timer && /저장/.test(tmDone.toast), tmDone.toast);
 
   console.log('\n== 체형 측정 (카메라) ==');
   await page.click('#arSeg [data-view="measure"]');
@@ -168,6 +230,9 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   await sleep(600);
   await shot('05-measure-ready');
   await page.click('#btnMeasureStart');
+  const armed = await page.evaluate(() => ({ armed: MEASURE.armed, btn: document.getElementById('btnMeasureStart').textContent }));
+  const tAuto = await waitFor(page, () => MEASURE.countdown > 0 || MEASURE.running, 8000);
+  assert('측정 버튼 → 대기 후 자세 안정되면 자동 시작 (혼자 측정)', armed.armed && /자리 잡는 중/.test(armed.btn) && tAuto >= 0, `${armed.btn} → ${tAuto}ms`);
   await sleep(3600);
   const mid = await page.evaluate(() => ({ running: MEASURE.running, n: MEASURE.samples.length, reject: MEASURE.reject }));
   await shot('06-measure-running');
@@ -216,6 +281,48 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   await page.click('#arToCart');
   assert('AR 코디 장바구니 2벌', (await page.evaluate(() => Object.keys(state.cart).length)) === 2);
 
+  console.log('\n== 실제 옷 사진 → 내 옷 등록 ==');
+  await page.evaluate(() => { AR.outfit = { top: null, bottom: null }; arPut(arItem('p08')); arPut(arItem('p09')); arRenderRail(); });
+  await sleep(900);
+  await shot('10-ar-photo-poncho');
+  assert('판초·트라우저(p08/p09) 착용컷 자동 추출본 AR 착용', await page.evaluate(() => AR.outfit.top === 'p08' && AR.outfit.bottom === 'p09' && AR.assets.p08 && AR.assets.p08.ready !== false));
+  const gIn = await page.$('#garmentInput');
+  await gIn.uploadFile(path.join(ROOT, 'assets', 'shop', 'item_7.png'));
+  const tG = await waitFor(page, () => WARDROBE.length >= 2, 45000);
+  const wd = await page.evaluate(() => ({
+    n: WARDROBE.length, slots: WARDROBE.map((w) => w.ar.slot).join('+'), cat: state.arCat,
+    worn: [AR.outfit.top, AR.outfit.bottom].every((id) => id && arItem(id).custom),
+    chip: !!document.querySelector('#arCats [data-cat="내 옷"].active'),
+    rail: [...document.querySelectorAll('#arRail [data-ar]')].every((b) => arItem(b.dataset.ar).custom),
+    saved: JSON.parse(localStorage.getItem(WARDROBE_KEY) || '[]').length, owned: WARDROBE.every((w) => state.ownedIds.includes(w.id)),
+    shop: CATALOG.some((i) => i.custom),
+  }));
+  assert('착용컷 → 상의+하의 자동 분리 등록', tG >= 0 && wd.slots === 'top+bottom', `${tG}ms ${wd.slots}`);
+  assert('등록 즉시 AR 착용 + 내 옷 카테고리', wd.worn && wd.cat === '내 옷' && wd.chip && wd.rail, JSON.stringify(wd));
+  assert('내 옷 저장 · 옷장 편입 · 쇼핑 목록 제외', wd.saved === 2 && wd.owned && !wd.shop);
+  await sleep(700);
+  await shot('11-ar-wardrobe');
+  const lookyWear = await page.evaluate(async () => {
+    const top = WARDROBE.find((w) => w.ar.slot === 'top');
+    wearItem(top); save(); renderHome();
+    await new Promise((r) => setTimeout(r, 900));
+    return state.wornCatalog.topId === top.id;
+  });
+  assert('룩키에게 내 옷 입히기', lookyWear);
+  await page.click('.tab[data-tab="my"]');
+  await sleep(400);
+  const myN = await page.$$eval('#myWardrobe .wd', (e) => e.length);
+  await page.evaluate(() => document.querySelector(`#myWardrobe .x[data-wd="${WARDROBE.find((w) => w.ar.slot === 'bottom').id}"]`).click());
+  await sleep(300);
+  const myAfter = await page.evaluate(() => ({ n: WARDROBE.length, dom: document.querySelectorAll('#myWardrobe .wd').length }));
+  assert('MY → 등록한 옷 목록 · 개별 삭제', myN === 2 && myAfter.n === 1 && myAfter.dom === 1, `${myN}→${myAfter.n}`);
+  await shot('12-my-wardrobe');
+  await page.click('.tab[data-tab="home"]');
+  await sleep(900);
+  await shot('13-home-looky-wardrobe');
+  await page.click('.tab[data-tab="ar"]');
+  await sleep(600);
+
   console.log('\n== 카메라 해제 ==');
   await page.click('#arModes [data-mode="camera"]');
   await waitFor(page, () => !!AR.stream, 8000);
@@ -228,7 +335,7 @@ async function waitFor(page, fn, timeout = 60000, arg) {
   const race = await page.evaluate(() => ({ open: AR.open, stream: AR.stream, mode: AR.mode, live: !!document.getElementById('arVideo').srcObject }));
   assert('진입 직후 이탈해도 카메라 누수 없음', !race.open && race.stream === null && race.mode === null && !race.live, JSON.stringify(race));
   await sleep(400);
-  await shot('10-home-after');
+  await shot('14-home-after');
 
   assert('콘솔/페이지 에러 없음', errors.length === 0, errors.slice(0, 5).join(' | '));
   console.log('\nscreenshots:', OUT);

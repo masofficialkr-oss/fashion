@@ -18,6 +18,7 @@
       exploreCat: '전체', exploreFilter: '', exploreSort: 'recommend', searchQuery: '', activeProductId: null,
       pdpImg: 0, pdpSize: 'M', couponUsed: false,
       arRewardDate: '', measureRewardDate: '', wearExpDate: '', wearExpCount: 0, buyExpDate: '',
+      voice: true, gesture: true, arCat: '전체', arCoachSeen: false,
     };
 
     const won = (n) => '₩' + Number(n).toLocaleString('ko-KR');
@@ -36,7 +37,7 @@
         if (!raw) return;
         const p = JSON.parse(raw);
         Object.keys(state).forEach((k) => { if (p[k] !== undefined && p[k] !== null) state[k] = p[k]; });
-        const known = (id) => CATALOG.some((c) => c.id === id);
+        const known = (id) => !!arItem(id);
         const arr = (v) => (Array.isArray(v) ? v.filter(known) : []);
         state.body = { shoulder: 50, waist: 50, lower: 50, ...(p.body || {}) };
         state.ownedIds = arr(state.ownedIds);
@@ -81,6 +82,7 @@
       return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     }
     function posClass(item) {
+      if (item && item.custom) return 'contain';
       if (!item || !item.thumbPos) return '';
       return { top: 'pos-top', upper: 'pos-upper', bottom: 'pos-bottom' }[item.thumbPos] || '';
     }
@@ -284,6 +286,7 @@
     // ---------- 상품 상세 ----------
     function openProduct(id) {
       const item = arItem(id); if (!item) return;
+      if (item.custom) { openAR([id]); return; }
       state.activeProductId = id;
       state.recentIds = [id, ...state.recentIds.filter((x) => x !== id)].slice(0, 12);
       state.pdpImg = 0;
@@ -516,6 +519,25 @@
       };
       rail('myRecentWrap', 'recentRail', state.recentIds);
       rail('myWishWrap', 'wishRail', state.wishlist);
+      $('btnWardrobeClear').style.display = WARDROBE.length ? '' : 'none';
+      $('myWardrobe').innerHTML = WARDROBE.length
+        ? `<div class="wd-row">${WARDROBE.map((g) => `<div class="wd" title="${g.name}"><img src="${g.image}" alt=""><button type="button" class="x" data-wd="${g.id}" aria-label="삭제">×</button></div>`).join('')}</div><p class="small-txt">${WARDROBE.length}/${WARDROBE_MAX}벌 · 이 기기에만 저장돼요</p>`
+        : '<p class="small-txt">쇼핑몰 모델 착용컷이나 내 전신 사진(정면)을 올리면 상의·하의를 자동으로 분리해 AR과 룩키에게 입힐 수 있어요.</p>';
+      $('myWardrobe').querySelectorAll('[data-wd]').forEach((b) => b.addEventListener('click', () => removeWardrobe([b.dataset.wd])));
+    }
+    function removeWardrobe(ids) {
+      ids.forEach((id) => {
+        wardrobeRemove(id);
+        state.ownedIds = state.ownedIds.filter((x) => x !== id);
+        if (state.wornCatalog.topId === id) state.wornCatalog.topId = null;
+        if (state.wornCatalog.bottomId === id) state.wornCatalog.bottomId = null;
+        if (AR.outfit.top === id) AR.outfit.top = null;
+        if (AR.outfit.bottom === id) AR.outfit.bottom = null;
+        if (state.selectedId === id) state.selectedId = null;
+      });
+      AR.railIds = AR.railIds.filter((id) => !ids.includes(id));
+      if (!WARDROBE.length && state.arCat === '내 옷') state.arCat = '전체';
+      save(); renderMy(); renderCloset(); renderHome();
     }
 
     // ---------- AR 탭 패널 ----------
@@ -540,7 +562,8 @@
       $('measureBar').style.width = Math.min(100, MEASURE.samples.length / MEASURE.need * 100) + '%';
       $('measureProgTxt').textContent = '측정 중… ' + MEASURE.samples.length + ' / ' + MEASURE.need + ' 프레임';
       $('measureReject').textContent = MEASURE.reject;
-      $('btnMeasureStart').textContent = on ? '측정 취소' : state.measure ? '카메라로 다시 측정 (3초 후)' : '카메라로 측정 시작 (3초 후)';
+      $('btnMeasureStart').textContent = on ? '측정 취소' : MEASURE.armed ? '자리 잡는 중… (누르면 취소)' : state.measure ? '카메라로 다시 측정' : '카메라로 측정 시작';
+      $('btnMeasureStart').classList.toggle('waiting', MEASURE.armed && !on);
     }
     function renderMeasureResult() {
       const box = $('measureResult');
@@ -548,7 +571,8 @@
       if (!measured()) { box.hidden = true; box.innerHTML = ''; return; }
       box.hidden = false;
       const d = new Date(m.at);
-      const how = { camera: '카메라 ' + m.frames + '프레임 + 입력값', photo: '전신 사진 + 입력값', input: '키·몸무게 통계 추정' }[m.method];
+      const near = m.range === 'near' ? '근거리 ' : '';
+      const how = { camera: '카메라 ' + near + m.frames + '프레임 + 입력값', photo: (near ? '상반신' : '전신') + ' 사진 + 입력값', input: '키·몸무게 통계 추정' }[m.method];
       box.innerHTML = `<div class="hd"><div><small>${how} · ${d.getMonth() + 1}/${d.getDate()}</small><h4>${state.analysis.type}</h4></div>` +
         `<div class="size-box"><div>상의<b>${m.sizes.top}</b></div><div>하의<b>${m.sizes.bottom}</b></div></div></div>` +
         `<div class="metrics">${['shoulder', 'chest', 'waist', 'hip', 'arm', 'leg'].map((k) => `<div class="${m.src[k] === 'camera' ? 'cam' : ''}">${MEASURE_LABEL[k]}<b>${Math.round(m.values[k])}<small>±${m.err[k]}cm</small></b></div>`).join('')}</div>` +
@@ -654,13 +678,29 @@
     readFile($('arPhotoInput'), arUsePhoto);
     readFile($('measurePhotoInput'), measureFromPhoto);
     $('arCapture').addEventListener('click', arCapture);
+    $('arPrev').addEventListener('click', () => arStep(-1));
+    $('arNext').addEventListener('click', () => arStep(1));
+    $('arFull').addEventListener('click', arFullscreen);
+    $('arGest').addEventListener('click', () => { state.gesture = !state.gesture; save(); arRenderToggles(); showToast(state.gesture ? '손 제스처 켜짐 · 오른손 다음, 왼손 이전, 양손 촬영' : '손 제스처 꺼짐'); });
+    $('arVoice').addEventListener('click', () => { state.voice = !state.voice; save(); arRenderToggles(); if (!state.voice && window.speechSynthesis) speechSynthesis.cancel(); showToast(state.voice ? '음성 안내 켜짐' : '음성 안내 꺼짐'); });
+    document.addEventListener('keydown', arKey);
+    $('btnClosetAddPhoto').addEventListener('click', () => $('garmentInput').click());
+    $('btnWardrobeClear').addEventListener('click', () => { if (confirm('사진으로 등록한 옷을 모두 삭제할까요?')) removeWardrobe(WARDROBE.map((g) => g.id)); });
+    $('garmentInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => garmentFromPhoto(rd.result);
+      rd.readAsDataURL(f);
+    });
     $('arToCart').addEventListener('click', () => {
       const ids = [AR.outfit.top, AR.outfit.bottom].filter(Boolean);
       if (!ids.length) return showToast('먼저 입어볼 옷을 선택하세요');
       ids.forEach((id) => addToCart(cartKey(id, AR.size), 1));
       showToast(ids.length + '벌을 장바구니에 담았어요 · 사이즈 ' + AR.size);
     });
-    $('btnMeasureStart').addEventListener('click', () => { if (MEASURE.running || MEASURE.countdown > 0) measureCancel(); else measureStart(); });
+    $('btnMeasureStart').addEventListener('click', () => { if (MEASURE.running || MEASURE.countdown > 0 || MEASURE.armed) measureCancel(); else measureArm(); });
     $('btnMeasurePhoto').addEventListener('click', () => $('measurePhotoInput').click());
     $('btnMeasureInput').addEventListener('click', measureFromInput);
     ['heightInput', 'weightInput'].forEach((id) => $(id).addEventListener('change', () => { measureInputs(); save(); renderArView(); }));
@@ -704,6 +744,7 @@
       shell.style.height = (baseH * scale) + 'px';
     }
 
+    wardrobeLoad();
     load();
     learnModel();
     tickClock();

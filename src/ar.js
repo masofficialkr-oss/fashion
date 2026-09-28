@@ -108,10 +108,19 @@
 
     // ---------- 사용자 체형 비율 학습: 전신이 잘 보인 프레임마다 어깨폭 대비 비율을 누적 평균 → 가려진 관절 추정에 사용 ----------
     const LEARN_KEYS = ['torso', 'hipW', 'thigh', 'shin'];
-    const learnDefaults = () => ({ n: 0, c: { torso: 0, hipW: 0, thigh: 0, shin: 0 }, torso: 1.5, hipW: 0.56, thigh: 1.0, shin: 1.05 });
+    const HIP_RATIO = 0.48;
+    const learnDefaults = () => ({ n: 0, c: { torso: 0, hipW: 0, thigh: 0, shin: 0, hipR: 0 }, torso: 1.5, hipW: 0.56, thigh: 1.0, shin: 1.05, hipR: HIP_RATIO });
     function learnModel() {
       if (!state.learn || !state.learn.c) state.learn = learnDefaults();
+      if (state.learn.hipR == null) { state.learn.hipR = HIP_RATIO; state.learn.c.hipR = 0; }
       return state.learn;
+    }
+    // 전신 측정 프레임의 (정수리~골반 관절)/키 비율을 누적 → 발이 안 보이는 근거리 측정의 축척으로 사용
+    function learnHipRatio(r) {
+      if (!(r > 0.42 && r < 0.56)) return;
+      const L = learnModel();
+      L.c.hipR = Math.min(200, L.c.hipR + 1);
+      L.hipR += (r - L.hipR) / L.c.hipR;
     }
     function learnUpdate(K, info, weight = 1) {
       if (!info || !info.real.hips || !info.frontal) return false;
@@ -142,19 +151,23 @@
       open: false, mode: null, view: 'tryon', stream: null, raf: 0, src: null, srcPose: null, kp: null, lost: 0, busy: false,
       outfit: { top: null, bottom: null }, size: 'M', assets: {}, fit: null, railIds: [], filt: {}, jump: 0,
       frames: 0, fpsAt: 0, fps: 0, statusText: '', detAt: 0, learnSaveAt: 0, lastPose: null,
+      gest: { side: null, since: 0, prog: 0, lock: false }, focusId: null, timer: 0,
     };
     const rafFn = (f) => (window.requestAnimationFrame ? window.requestAnimationFrame(f) : setTimeout(f, 33));
     const cafFn = (id) => (window.cancelAnimationFrame ? window.cancelAnimationFrame(id) : clearTimeout(id));
     const Pt = (x, y) => ({ x, y });
     const lerpPt = (a, b, t) => Pt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
     const extPt = (a, b, t) => Pt(a.x + (a.x - b.x) * t, a.y + (a.y - b.y) * t);
-    const arItem = (id) => CATALOG.find((c) => c.id === id);
+    const arItem = (id) => CATALOG.find((c) => c.id === id) || WARDROBE.find((c) => c.id === id);
     const arCapable = (item) => !!(item && item.ar);
 
     function arAsset(item) {
       if (AR.assets[item.id]) return AR.assets[item.id];
       const a = { img: new Image(), ready: false, kp: null };
-      if (item.isPhoto) {
+      if (item.custom) {
+        a.kp = item.ar.kp;
+        a.img.src = item.ar.src;
+      } else if (item.isPhoto) {
         const an = AR_PHOTO_ANCHORS[item.ar.piece];
         a.kp = an.kp;
         a.img.src = an.src;
@@ -243,6 +256,99 @@
         else arDrawMesh(ctx, sp[s].img, gs, gd);
       });
       arDrawMesh(ctx, sp.body.img, gs, gd);
+    }
+    // 의상 한 벌씩 오프스크린에 그려 합성: 생성 의상은 몸 관절 기반 입체 음영을 곱하고,
+    // sil(캐릭터 실루엣)이 주어지면 의상을 살짝 팽창시킨 그림자색 바탕을 실루엣 안에만 깔아 소매·몸판 사이 틈과 기본 옷 비침을 가림
+    const LAYERS = {};
+    function offCanvas(key, W, H) {
+      let c = LAYERS[key];
+      if (!c) c = LAYERS[key] = document.createElement('canvas');
+      if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+      const ctx = c.getContext ? c.getContext('2d') : null;
+      if (!ctx) return null;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.clearRect(0, 0, W, H);
+      return { c, ctx };
+    }
+    function arShadeMap(K, W, H) {
+      const S = offCanvas('s', W, H);
+      if (!S) return null;
+      const g = S.ctx;
+      const sw = Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y) || 1;
+      const mid = (a, b) => Pt((a.x + b.x) / 2, (a.y + b.y) / 2);
+      g.fillStyle = 'rgba(0,0,0,.3)';
+      g.fillRect(0, 0, W, H);
+      g.globalCompositeOperation = 'destination-out';
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      const tube = (pts, width) => {
+        for (let i = 0; i < 6; i++) {
+          g.strokeStyle = 'rgba(0,0,0,.24)';
+          g.lineWidth = width * (1 - i / 7);
+          g.beginPath(); pts.forEach((p, j) => (j ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.stroke();
+        }
+      };
+      const neck = mid(K.ls, K.rs), pelvis = mid(K.lh, K.rh);
+      tube([Pt(neck.x, neck.y - sw * 0.1), pelvis, lerpPt(pelvis, mid(K.lk, K.rk), 0.9)], sw * 1.05);
+      ['l', 'r'].forEach((s) => {
+        const arm = [K[s + 's'], K[s + 'e'], K[s + 'w']].filter(Boolean);
+        if (arm.length > 1) tube(arm, sw * 0.34);
+        tube([K[s + 'h'], K[s + 'k'], K[s + 'a']], sw * 0.4);
+      });
+      g.globalCompositeOperation = 'source-over';
+      const blob = (p, r, a) => {
+        const gr = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+        gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr; g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.fill();
+      };
+      ['l', 'r'].forEach((s) => blob(lerpPt(lerpPt(K[s + 's'], K[s + 'h'], 0.28), neck, 0.12), sw * 0.2, 0.22));
+      blob(lerpPt(pelvis, mid(K.lk, K.rk), 0.28), sw * 0.18, 0.2);
+      return S.c;
+    }
+    function arDrawOutfit(ctx, items, K, scale, widen, W, H, opt = {}) {
+      let shadeMap;
+      items.forEach((it) => {
+        const sc = opt.scaleFor ? opt.scaleFor(it) : scale;
+        const shaded = !it.isPhoto && !it.custom;
+        const G = (shaded || opt.sil) && offCanvas('g', W, H);
+        if (!G) { arDrawGarment(ctx, it, K, sc, widen); return; }
+        arDrawGarment(G.ctx, it, K, sc, widen);
+        if (shaded) {
+          if (shadeMap === undefined) shadeMap = arShadeMap(K, W, H);
+          if (shadeMap) { G.ctx.globalCompositeOperation = 'source-atop'; G.ctx.drawImage(shadeMap, 0, 0); G.ctx.globalCompositeOperation = 'source-over'; }
+        }
+        // 사진 옷의 소매는 팔을 따라 휘지 않으므로, 캐릭터에서는 팔과 몸통 사이 허공(손목 높이 위)에 걸린 부분을 지운다
+        if (opt.sil && !shaded && it.ar.slot !== 'bottom' && K.le && K.lw && K.re && K.rw) {
+          const M = offCanvas('m', W, H);
+          M.ctx.fillStyle = '#000';
+          const dn = Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y) * 0.45;
+          ['l', 'r'].forEach((s) => {
+            const S = K[s + 's'], E = K[s + 'e'], Wr = K[s + 'w'], Hp = K[s + 'h'];
+            const A = lerpPt(S, E, 0.3), yb = Math.max(Hp.y, Wr.y) + dn;
+            M.ctx.beginPath();
+            [A, E, Wr, Pt(Wr.x + (Wr.x - Hp.x) * 0.25, yb), Pt(Hp.x, yb)].forEach((p, i) => (i ? M.ctx.lineTo(p.x, p.y) : M.ctx.moveTo(p.x, p.y)));
+            M.ctx.closePath(); M.ctx.fill();
+          });
+          M.ctx.globalCompositeOperation = 'destination-out';
+          M.ctx.drawImage(opt.sil, 0, 0);
+          G.ctx.globalCompositeOperation = 'destination-out';
+          G.ctx.drawImage(M.c, 0, 0);
+          G.ctx.globalCompositeOperation = 'source-over';
+        }
+        if (opt.sil) {
+          const D = offCanvas('d', W, H);
+          const dd = Math.max(1, Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y) * 0.07);
+          [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [2, 0], [-2, 0]].forEach(([x, y]) => D.ctx.drawImage(G.c, x * dd, y * dd));
+          D.ctx.globalCompositeOperation = 'source-in';
+          D.ctx.fillStyle = shade(it.color || '#555555', -0.18);
+          D.ctx.fillRect(0, 0, W, H);
+          D.ctx.globalCompositeOperation = 'destination-in';
+          D.ctx.drawImage(opt.sil, 0, 0);
+          ctx.drawImage(D.c, 0, 0);
+        }
+        ctx.drawImage(G.c, 0, 0);
+      });
     }
     // 팔을 벌리면 몸판 옆선과 소매 안쪽 사이에 생기는 겨드랑이 틈을 원단색 삼각형으로 메움 (소매·몸판이 위에 덮임)
     function arGusset(ctx, item, Kd, s, scale, a) {
@@ -409,14 +515,15 @@
       const sw = src.type === 'video' ? src.el.videoWidth : src.el.naturalWidth;
       const sh = src.type === 'video' ? src.el.videoHeight : src.el.naturalHeight;
       if (!sw || !sh) return;
-      const r = arFitRect(sw, sh, W, H, src.type === 'video');
+      const r = arFitRect(sw, sh, W, H, src.type === 'video' && AR.view !== 'measure');
       AR.fit = { r, W, mirror: !!src.mirror };
       if (src.mirror) { ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1); ctx.drawImage(src.el, r.x, r.y, r.w, r.h); ctx.restore(); }
       else ctx.drawImage(src.el, r.x, r.y, r.w, r.h);
       if (src.type === 'image' && AR.srcPose) AR.kp = arKeypoints(AR.srcPose, arMapFn(r, W, false));
       if (!AR.kp) return;
       if (AR.view === 'measure') { arDrawSkeleton(ctx, AR.kp, W); return; }
-      [AR.outfit.bottom, AR.outfit.top].forEach((id) => { const it = id && arItem(id); if (it) arDrawGarment(ctx, it, AR.kp); });
+      arDrawOutfit(ctx, [AR.outfit.bottom, AR.outfit.top].map((id) => id && arItem(id)).filter(Boolean), AR.kp, AR_SIZE_SCALE[AR.size] || 1, SLEEVE_WIDEN, W, H);
+      arDrawGesture(ctx, AR.kp, W);
     }
     function arOnPose(res) {
       const v = AR.fit;
@@ -435,11 +542,8 @@
           const now = performance.now();
           if (now - AR.learnSaveAt > 3000) { AR.learnSaveAt = now; save(); renderArLearn(); }
         }
-        if (AR.view === 'tryon') arTracked();
-        else if (!MEASURE.running && !MEASURE.countdown) {
-          const full = info.real.la && info.real.ra;
-          arStatus(full ? '전신 인식 완료 · [측정 시작]을 눌러 주세요' : '발끝까지 보이도록 조금 더 뒤로 가 주세요', !full);
-        }
+        if (AR.view === 'tryon') { arTracked(); arGesture(AR.kp, performance.now()); }
+        else if (!MEASURE.running && !MEASURE.countdown) measureWatch(res, K, info);
       } else if (++AR.lost > 8) {
         AR.kp = null; AR.filt = {};
         arStatus(AR.view === 'tryon' ? '상반신(어깨~골반)이 화면에 들어오도록 1~2m 뒤로 서 주세요' : '사람을 찾는 중… 정면으로 서 주세요', true);
@@ -467,6 +571,7 @@
       const modeTxt = AR.mode === 'camera' ? '실시간 추적' + (AR.fps ? ' ' + AR.fps + 'fps' : '') : AR.mode === 'photo' ? '내 사진' : '샘플 모델';
       arStatus(modeTxt + ' · ' + AR.size + ' · ' + names);
       arMaybeReward();
+      if (AR.mode === 'camera' && AR.kp) arCoach();
     }
     function arMaybeReward() {
       if (!AR.outfit.top && !AR.outfit.bottom) return;
@@ -497,9 +602,13 @@
       arStatus('카메라 권한을 허용해 주세요…');
       try {
         if (!AR.stream) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 720 } }, audio: false });
+          // 4:3 원본 모드(잘라내기 없음) + 줌 최소 → 같은 거리에서 세로로 더 넓게 보여 가까이서도 전신이 들어옴
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 }, aspectRatio: { ideal: 4 / 3 }, resizeMode: { ideal: 'none' } }, audio: false,
+          });
           if (!AR.open || AR.mode !== 'camera') { stream.getTracks().forEach((t) => t.stop()); return; }
           AR.stream = stream;
+          arWidest(stream);
         }
         const v = document.getElementById('arVideo');
         if (v.srcObject !== AR.stream) v.srcObject = AR.stream;
@@ -520,6 +629,11 @@
       } catch (e) {
         arStatus('포즈 모델을 불러오지 못했어요(네트워크 확인) → 샘플 모델로 체험해 보세요');
       }
+    }
+    function arWidest(stream) {
+      const track = stream.getVideoTracks && stream.getVideoTracks()[0];
+      const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.zoom && caps.zoom.min != null) track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }).catch(() => {});
     }
     function arStartSample() {
       arEngine('샘플 모델 · 사전 분석 관절');
@@ -566,8 +680,8 @@
       if (!arCapable(item)) return;
       if (AR.outfit.top === id) AR.outfit.top = null;
       else if (AR.outfit.bottom === id) AR.outfit.bottom = null;
-      else arPut(item);
-      arRenderRail();
+      else { arPut(item); AR.focusId = id; arShowNow(item); }
+      arRenderRail(); arRenderSizes();
       if (AR.kp || AR.srcPose) arTracked();
     }
     function arRenderModes() {
@@ -585,18 +699,22 @@
     }
     function arRenderRail() {
       const on = [AR.outfit.top, AR.outfit.bottom];
-      document.getElementById('arRail').innerHTML = AR.railIds.map((id) => {
+      const ids = arRailVisible();
+      document.getElementById('arRail').innerHTML = ids.map((id) => {
         const it = arItem(id);
-        const slotTxt = it.ar.slot === 'bottom' ? '하의' : it.ar.slot === 'full' ? '전신' : '상의';
-        return `<button type="button" class="ar-item ${on.includes(id) ? 'on' : ''}" data-ar="${id}" title="${it.name}"><img class="${posClass(it)}" src="${it.image}" alt=""><span class="slot">${slotTxt}</span></button>`;
-      }).join('');
+        const slotTxt = it.custom ? '내 옷' : it.ar.slot === 'bottom' ? '하의' : it.ar.slot === 'full' ? '전신' : '상의';
+        return `<button type="button" class="ar-item ${on.includes(id) ? 'on' : ''}" data-ar="${id}" title="${it.name}"><img class="${posClass(it)}" src="${it.image}" alt="" draggable="false"><span class="slot">${slotTxt}</span></button>`;
+      }).join('') + '<button type="button" class="ar-item add" id="arAddGarment" title="사진으로 내 옷 등록"><b>+</b><span>옷 등록</span></button>' +
+        (ids.length ? '' : '<p class="ar-empty">이 카테고리에 입어볼 옷이 없어요</p>');
       document.querySelectorAll('#arRail [data-ar]').forEach((b) => b.addEventListener('click', () => arToggle(b.dataset.ar)));
+      document.getElementById('arAddGarment').addEventListener('click', () => document.getElementById('garmentInput').click());
+      dragScroll(document.getElementById('arRail'));
     }
     function arRailIds(focus) {
-      const ids = [...focus, state.wornCatalog.topId, state.wornCatalog.bottomId, ...state.ownedIds, ...state.wishlist, ...(state.recommendedIds || []),
+      const ids = [...focus, ...WARDROBE.map((g) => g.id), state.wornCatalog.topId, state.wornCatalog.bottomId, ...state.ownedIds, ...state.wishlist, ...(state.recommendedIds || []),
         ...CATALOG.filter((c) => c.isPhoto).map((c) => c.id),
         ...CATALOG.filter((c) => !c.isPhoto).sort((a, b) => fitScore(b) - fitScore(a)).slice(0, 18).map((c) => c.id)];
-      return [...new Set(ids.filter(Boolean))].filter((id) => arCapable(arItem(id))).slice(0, 32);
+      return [...new Set(ids.filter(Boolean))].filter((id) => arCapable(arItem(id))).slice(0, 40);
     }
     // AR 탭 진입 시 호출. ids가 있으면 해당 옷으로 시착 시작
     function openAR(ids, view) {
@@ -619,7 +737,10 @@
       AR.open = true;
       renderArView();
       arRenderSizes();
+      arRenderCats();
       arRenderRail();
+      arRenderToggles();
+      if (!AR.focusId || ![AR.outfit.top, AR.outfit.bottom].includes(AR.focusId)) AR.focusId = AR.outfit.top || AR.outfit.bottom;
       if (!wasOpen || !AR.mode) {
         const canCam = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
         arSetMode(canCam ? 'camera' : 'sample');
@@ -650,10 +771,188 @@
       document.body.appendChild(a); a.click(); a.remove();
     }
 
+    // ---------- 혼자서도 쓰는 AR: 음성·비프 안내, 손 들기 제스처, 타이머 촬영 ----------
+    const VOICE = { at: 0, last: '' };
+    function speak(text, force) {
+      if (!state.voice || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return;
+      const now = performance.now();
+      if (!force && (now - VOICE.at < 3500 || (text === VOICE.last && now - VOICE.at < 8000))) return;
+      VOICE.last = text; VOICE.at = now;
+      try {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'ko-KR'; u.rate = 1.05;
+        speechSynthesis.speak(u);
+      } catch (_) {}
+    }
+    let audioCtx = null;
+    function beep(freq = 880, ms = 110) {
+      if (!state.voice) return;
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime;
+        o.frequency.value = freq; o.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.14, t); g.gain.exponentialRampToValueAtTime(0.001, t + ms / 1000);
+        o.start(t); o.stop(t + ms / 1000);
+      } catch (_) {}
+    }
+    // 오른손을 어깨 위로 들고 0.6초 → 다음 옷, 왼손 → 이전 옷, 양손 → 3초 타이머 촬영. 손을 내려야 다음 동작을 받음
+    const GESTURE_HOLD = 600, GESTURE_BOTH_HOLD = 850;
+    function arGesture(K, t) {
+      const G = AR.gest;
+      if (!K || !state.gesture || AR.mode !== 'camera' || AR.view !== 'tryon' || AR.timer) { G.side = null; G.prog = 0; return; }
+      const sw = Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y);
+      const up = (s) => !!(K[s + 'w'] && K[s + 'e'] && K[s + 'w'].y < K[s + 's'].y - sw * 0.25 && K[s + 'w'].y < K[s + 'e'].y);
+      const l = up('l'), r = up('r');
+      const side = l && r ? 'both' : r ? 'r' : l ? 'l' : null;
+      if (!side) { G.side = null; G.prog = 0; G.lock = false; return; }
+      if (G.lock) return;
+      if (side !== G.side) { G.side = side; G.since = t; }
+      G.prog = Math.min(1, (t - G.since) / (side === 'both' ? GESTURE_BOTH_HOLD : GESTURE_HOLD));
+      if (G.prog < 1) return;
+      G.lock = true; G.prog = 0;
+      if (side === 'both') arTimerCapture();
+      else arStep(side === 'r' ? 1 : -1, true);
+    }
+    function arDrawGesture(ctx, K, W) {
+      const G = AR.gest;
+      if (!G.side || !G.prog || !K) return;
+      const r = Math.max(14, W / 16);
+      (G.side === 'both' ? ['l', 'r'] : [G.side]).forEach((s) => {
+        const p = K[s + 'w'];
+        if (!p) return;
+        ctx.save();
+        ctx.lineWidth = r * 0.28; ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(255,255,255,.35)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#19B394';
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * G.prog); ctx.stroke();
+        ctx.restore();
+      });
+    }
+    function arTimerCapture() {
+      if (AR.timer) return;
+      AR.timer = 3;
+      renderArTimer(); beep(880); speak('3초 뒤에 촬영해요', true);
+      const iv = setInterval(() => {
+        AR.timer -= 1;
+        renderArTimer();
+        if (AR.timer > 0) { beep(880); return; }
+        clearInterval(iv);
+        beep(1500, 160);
+        if (AR.open) arCapture();
+      }, 1000);
+    }
+    function renderArTimer() {
+      const el = document.getElementById('arTimer');
+      el.textContent = AR.timer ? String(AR.timer) : '';
+      el.classList.toggle('show', !!AR.timer);
+    }
+
+    // ---------- 옷 넘기기: 카테고리 · 이전/다음 (레일 버튼 · 키보드 · 제스처 공통) ----------
+    const AR_CATS = [['전체', () => true], ['상의', (i) => i.ar.slot === 'top'], ['하의', (i) => i.ar.slot === 'bottom'], ['원피스·전신', (i) => i.ar.slot === 'full'], ['내 옷', (i) => !!i.custom]];
+    function arRailVisible() {
+      const f = (AR_CATS.find(([c]) => c === state.arCat) || AR_CATS[0])[1];
+      return AR.railIds.filter((id) => f(arItem(id)));
+    }
+    function arStep(dir, byGesture) {
+      const ids = arRailVisible();
+      if (!ids.length) return;
+      const cur = ids.indexOf(AR.focusId);
+      const id = ids[cur < 0 ? (dir > 0 ? 0 : ids.length - 1) : (cur + dir + ids.length) % ids.length];
+      arPut(arItem(id));
+      AR.focusId = id;
+      arRenderRail(); arRenderSizes();
+      arScrollRailTo(id);
+      arShowNow(arItem(id));
+      if (byGesture) beep(dir > 0 ? 990 : 700, 90);
+      if (AR.kp || AR.srcPose) arTracked();
+    }
+    function arShowNow(it) {
+      const el = document.getElementById('arNow');
+      if (!it) return;
+      const slot = it.ar.slot === 'bottom' ? '하의' : it.ar.slot === 'full' ? '전신' : '상의';
+      el.innerHTML = `<small>${slot} · ${it.brand}</small><b>${it.name}</b><span>${won(salePrice(it))}</span>`;
+      el.classList.add('show');
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.classList.remove('show'), 2200);
+    }
+    function arScrollRailTo(id) {
+      const b = document.querySelector(`#arRail [data-ar="${id}"]`);
+      const rail = document.getElementById('arRail');
+      if (!b || !rail) return;
+      const x = b.offsetLeft - (rail.clientWidth - b.offsetWidth) / 2;
+      if (rail.scrollTo) rail.scrollTo({ left: x, behavior: 'smooth' }); else rail.scrollLeft = x;
+    }
+    function arRenderCats() {
+      const el = document.getElementById('arCats');
+      el.innerHTML = AR_CATS.filter(([c]) => c !== '내 옷' || WARDROBE.length).map(([c]) => `<button type="button" class="${state.arCat === c ? 'active' : ''}" data-cat="${c}">${c}</button>`).join('');
+      el.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { state.arCat = b.dataset.cat; save(); arRenderCats(); arRenderRail(); }));
+    }
+    // 마우스로도 레일을 끌어서 넘기고(관성 없음), 세로 휠은 가로 스크롤로 변환. 끌기 후에는 클릭을 무시
+    function dragScroll(el) {
+      if (!el || el._drag) return;
+      el._drag = true;
+      let down = null;
+      el.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse' || e.button !== 0) return; down = { x: e.clientX, left: el.scrollLeft, moved: false }; });
+      window.addEventListener('pointermove', (e) => {
+        if (!down) return;
+        const dx = e.clientX - down.x;
+        if (Math.abs(dx) > 4) { down.moved = true; el.classList.add('dragging'); }
+        if (down.moved) el.scrollLeft = down.left - dx;
+      });
+      window.addEventListener('pointerup', () => {
+        if (!down) return;
+        const moved = down.moved;
+        down = null;
+        el.classList.remove('dragging');
+        if (moved) { el._justDragged = true; setTimeout(() => { el._justDragged = false; }, 0); }
+      });
+      el.addEventListener('click', (e) => { if (el._justDragged) { e.stopPropagation(); e.preventDefault(); } }, true);
+      el.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
+        el.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }, { passive: false });
+    }
+    function arFullscreen() {
+      const el = document.querySelector('.screen.ar');
+      const fs = document.fullscreenElement;
+      if (fs) { document.exitFullscreen && document.exitFullscreen(); return; }
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => showToast('이 브라우저는 전체화면을 지원하지 않아요'));
+      else showToast('이 브라우저는 전체화면을 지원하지 않아요');
+    }
+    function arRenderToggles() {
+      document.getElementById('arVoice').classList.toggle('on', !!state.voice);
+      document.getElementById('arGest').classList.toggle('on', !!state.gesture);
+    }
+    function arKey(e) {
+      if (!AR.open || AR.view !== 'tryon' || /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '')) return;
+      const sizes = SIZES, i = sizes.indexOf(AR.size);
+      if (e.key === 'ArrowRight') arStep(1);
+      else if (e.key === 'ArrowLeft') arStep(-1);
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        AR.size = sizes[Math.max(0, Math.min(sizes.length - 1, i + (e.key === 'ArrowUp' ? 1 : -1)))];
+        arRenderSizes();
+        if (AR.kp || AR.srcPose) arTracked();
+      } else if (e.key === 't' || e.key === 'T') arTimerCapture();
+      else if (e.key === 'f' || e.key === 'F') arFullscreen();
+      else return;
+      e.preventDefault();
+    }
+    function arCoach() {
+      if (state.arCoachSeen || AR.mode !== 'camera') return;
+      state.arCoachSeen = true; save();
+      const el = document.getElementById('arCoach');
+      el.classList.add('show');
+      speak('혼자서도 입어볼 수 있어요. 오른손을 들면 다음 옷, 왼손을 들면 이전 옷, 양손을 들면 3초 뒤에 촬영해요.', true);
+      setTimeout(() => el.classList.remove('show'), 6500);
+    }
+
     // ---------- 체형 측정: 입력 키/몸무게(사전 분포) + 카메라 반복 측정(분할 마스크 실루엣 폭) 융합 ----------
     const MEASURE_KEYS = ['shoulder', 'chest', 'waist', 'hip', 'arm', 'leg', 'torso'];
     const MEASURE_LABEL = { shoulder: '어깨너비', chest: '가슴둘레', waist: '허리둘레', hip: '엉덩이둘레', arm: '팔 길이', leg: '다리 길이', torso: '상체 길이' };
-    const MEASURE = { running: false, samples: [], startAt: 0, dur: 4500, need: 30, timer: 0, countdown: 0, reject: '', closed: 0 };
+    const MEASURE = { running: false, samples: [], startAt: 0, dur: 4500, need: 30, timer: 0, countdown: 0, reject: '', closed: 0, near: 0 };
     const ARMS_HINT = '팔을 몸에서 살짝 떼면(A자 자세) 가슴·허리·엉덩이도 실측돼요';
 
     function bodyPrior(H, W, g) {
@@ -704,19 +1003,29 @@
       }
       return (r - l + 1) / fx;
     }
+    // 화면에 들어온 범위: full(발목까지) · near(무릎까지, 근거리 측정) · half(골반까지) · null
+    function measureRange(res) {
+      if (!res) return null;
+      const k = Object.fromEntries(res.keypoints.map((p) => [p.name, p]));
+      const vis = (n, lim = 0.99) => k[n] && k[n].score >= 0.5 && k[n].y < res.h * lim;
+      if (!['nose', 'left_shoulder', 'right_shoulder', 'left_hip', 'right_hip'].every((n) => vis(n))) return null;
+      if (!vis('left_knee') || !vis('right_knee')) return 'half';
+      return vis('left_ankle', 0.985) && vis('right_ankle', 0.985) ? 'full' : 'near';
+    }
     // 한 프레임에서 cm 단위 치수 추출 (실패 시 이유 문자열)
     function measureFrame(res, H) {
       if (!res) return '사람을 찾는 중';
       const k = Object.fromEntries(res.keypoints.map((p) => [p.name, p]));
-      const need = ['nose', 'left_shoulder', 'right_shoulder', 'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle'];
-      if (need.some((n) => !k[n] || k[n].score < 0.5)) return '머리부터 발끝까지 화면에 들어오게 뒤로 가 주세요';
+      const range = measureRange(res);
+      if (!range) return '머리와 어깨·골반이 모두 보이게 서 주세요';
+      if (range === 'half') return '무릎까지 보이게 한 걸음만 뒤로 가 주세요';
       const P = (n) => Pt(k[n].x, k[n].y);
       const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
       const ls = P('left_shoulder'), rs = P('right_shoulder'), lh = P('left_hip'), rh = P('right_hip');
       const sw = d(ls, rs);
       if (Math.abs(ls.y - rs.y) > sw * 0.2) return '카메라를 정면으로 봐 주세요';
-      const ankY = (k.left_ankle.y + k.right_ankle.y) / 2;
-      if (ankY > res.h * 0.985) return '발끝이 잘렸어요 · 조금 더 뒤로';
+      const full = range === 'full';
+      const ankY = full ? (k.left_ankle.y + k.right_ankle.y) / 2 : 0;
       const sm = lerpPt(ls, rs, 0.5), hm = lerpPt(lh, rh, 0.5);
       const torsoPx = d(sm, hm);
       const mask = res.mask;
@@ -729,20 +1038,34 @@
           for (let x = x0; x <= x1; x += 2) if (mask.data[y * mask.w + x] >= 0.5) { hit = true; break; }
           if (hit) { top = y / fy; break; }
         }
-        const ax0 = Math.max(0, Math.round((Math.min(k.left_ankle.x, k.right_ankle.x) - sw * 0.35) * fx));
-        const ax1 = Math.min(mask.w - 1, Math.round((Math.max(k.left_ankle.x, k.right_ankle.x) + sw * 0.35) * fx));
-        for (let y = mask.h - 1; y > Math.round(ankY * fy); y--) {
-          let hit = false;
-          for (let x = ax0; x <= ax1; x += 2) if (mask.data[y * mask.w + x] >= 0.5) { hit = true; break; }
-          if (hit) { bottom = y / fy; break; }
+        if (full) {
+          const ax0 = Math.max(0, Math.round((Math.min(k.left_ankle.x, k.right_ankle.x) - sw * 0.35) * fx));
+          const ax1 = Math.min(mask.w - 1, Math.round((Math.max(k.left_ankle.x, k.right_ankle.x) + sw * 0.35) * fx));
+          for (let y = mask.h - 1; y > Math.round(ankY * fy); y--) {
+            let hit = false;
+            for (let x = ax0; x <= ax1; x += 2) if (mask.data[y * mask.w + x] >= 0.5) { hit = true; break; }
+            if (hit) { bottom = y / fy; break; }
+          }
         }
       }
-      const stature = bottom - top;
-      if (stature < res.h * 0.45) return '조금 더 가까이 와 주세요';
-      const s = H / stature;
+      if (top < res.h * 0.004) return '머리 위가 잘렸어요 · 카메라를 조금 위로 향해 주세요';
+      // 근거리: 발목이 안 보이면 정수리~골반 길이를 키의 일정 비율(전신 측정 때 사용자별로 학습)로 보고 축척을 잡음
+      let s;
+      if (full) {
+        const stature = bottom - top;
+        if (stature < res.h * 0.45) return '조금 더 가까이 와 주세요';
+        s = H / stature;
+      } else {
+        const upper = hm.y - top;
+        if (upper < res.h * 0.3) return '조금 더 가까이 와 주세요';
+        s = H * learnModel().hipR / upper;
+      }
       const out = { torso: torsoPx * s };
-      const legL = d(lh, P('left_knee')) + d(P('left_knee'), P('left_ankle')), legR = d(rh, P('right_knee')) + d(P('right_knee'), P('right_ankle'));
-      out.leg = (legL + legR) / 2 * s + H * 0.035;
+      if (full) {
+        const legL = d(lh, P('left_knee')) + d(P('left_knee'), P('left_ankle')), legR = d(rh, P('right_knee')) + d(P('right_knee'), P('right_ankle'));
+        out.leg = (legL + legR) / 2 * s + H * 0.035;
+        out.hipR = (hm.y - top) / (bottom - top);
+      }
       if (['left_elbow', 'right_elbow', 'left_wrist', 'right_wrist'].every((n) => k[n] && k[n].score >= 0.5)) {
         const arm = (sd) => d(P(sd + '_shoulder'), P(sd + '_elbow')) + d(P(sd + '_elbow'), P(sd + '_wrist'));
         out.arm = (arm('left') + arm('right')) / 2 * s + 2;
@@ -798,6 +1121,11 @@
       Object.keys(values).forEach((k) => { values[k] = Math.round(values[k] * 10) / 10; err[k] = Math.max(1, Math.round(err[k])); });
       return { at: Date.now(), method, frames: samples.length, height: H, weight: W, gender: g, values, err, src };
     }
+    // 근거리 측정은 축척을 비율로 추정하므로(전신 측정으로 보정 전 약 ±3.5%) 카메라 치수 오차를 넓게 표시
+    function nearError(m) {
+      const calibrated = learnModel().c.hipR >= 5;
+      Object.keys(m.err).forEach((k) => { if (m.src[k] === 'camera') m.err[k] = Math.max(m.err[k] + (calibrated ? 0 : 1), Math.round(m.values[k] * (calibrated ? 0.02 : 0.035))); });
+    }
     function measureSizes(m) {
       const w = m.gender === 'W';
       const pick = (v, cuts) => SIZES[Math.min(3, cuts.findIndex((c) => v <= c) < 0 ? 3 : cuts.findIndex((c) => v <= c))];
@@ -846,19 +1174,50 @@
     }
     function measureCancel() {
       MEASURE.running = false;
+      MEASURE.armed = false;
       clearInterval(MEASURE.timer);
       MEASURE.countdown = 0;
       renderMeasureProgress();
     }
+    // 혼자 측정: 버튼을 누르고 뒤로 가면, 자세가 1초 이상 안정됐을 때 자동으로 카운트다운 시작
+    function measureArm() {
+      measureCancel();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('카메라가 없어요 · 전신 사진이나 입력값으로 측정해 주세요'); return; }
+      MEASURE.armed = true;
+      MEASURE.steadyAt = 0;
+      if (AR.mode !== 'camera') arSetMode('camera');
+      speak('측정을 준비할게요. 머리부터 무릎까지 보이게 서 주세요. 발끝까지 보이면 더 정확해요.', true);
+      renderMeasureProgress();
+    }
+    function measureWatch(res, K, info) {
+      const rg = measureRange(res);
+      const ready = (rg === 'full' || rg === 'near') && info.frontal;
+      const msg = { full: '전신 인식 · 정밀 측정 가능', near: '무릎까지 인식 · 근거리 측정 가능 (다리 길이는 입력값 기준)', half: '무릎이 보이도록 한 걸음만 뒤로 가 주세요' }[rg] || '머리부터 골반까지 보이게 정면으로 서 주세요';
+      if (!MEASURE.armed) { arStatus(msg + (ready ? ' · [측정 시작]' : ''), !ready); return; }
+      const now = performance.now();
+      if (!ready) {
+        MEASURE.steadyAt = 0;
+        arStatus(msg, true);
+        speak(rg === 'half' ? '한 걸음만 뒤로 가 주세요' : '정면으로 서 주세요');
+        return;
+      }
+      if (!MEASURE.steadyAt) MEASURE.steadyAt = now;
+      arStatus(msg + ' · 그대로 서 계시면 자동으로 시작해요');
+      if (now - MEASURE.steadyAt > 1000) { MEASURE.armed = false; measureStart(); }
+    }
     function measureStart() {
       if (AR.mode !== 'camera' || !AR.src) { showToast('카메라가 켜져야 측정할 수 있어요'); return arSetMode('camera'); }
       measureCancel();
-      MEASURE.samples = []; MEASURE.reject = ''; MEASURE.closed = 0;
+      MEASURE.samples = []; MEASURE.reject = ''; MEASURE.closed = 0; MEASURE.near = 0;
       MEASURE.countdown = 3;
+      speak('좋아요. 그대로 멈춰 주세요.', true);
+      beep(880);
       renderMeasureProgress();
       MEASURE.timer = setInterval(() => {
         MEASURE.countdown -= 1;
+        if (MEASURE.countdown > 0) beep(880);
         if (MEASURE.countdown <= 0) {
+          beep(1320, 180);
           clearInterval(MEASURE.timer);
           MEASURE.running = true;
           MEASURE.startAt = performance.now();
@@ -877,6 +1236,7 @@
       if (typeof r === 'string') { MEASURE.reject = r; return; }
       MEASURE.reject = r.armsClosed ? ARMS_HINT : '';
       if (r.armsClosed) { MEASURE.closed += 1; delete r.armsClosed; }
+      if (r.hipR) { learnHipRatio(r.hipR); delete r.hipR; } else MEASURE.near += 1;
       MEASURE.samples.push(r);
       const info = {};
       const K = arKeypoints(res.keypoints, (x, y) => Pt(x, y), info);
@@ -888,9 +1248,14 @@
       measureCancel();
       if (samples.length < 5) {
         showToast('전신이 충분히 인식되지 않았어요 · ' + (MEASURE.reject || '다시 시도해 주세요'));
+        speak('인식이 충분하지 않았어요. 다시 시도해 주세요.', true);
         return;
       }
+      beep(1320, 120); setTimeout(() => beep(1760, 160), 140);
+      speak('측정이 끝났어요. 결과를 확인해 주세요.', true);
       const m = measureFuse(samples, H, W, g, 'camera');
+      m.range = MEASURE.near > samples.length / 2 ? 'near' : 'full';
+      if (m.range === 'near') nearError(m);
       if (MEASURE.closed > samples.length / 2) m.hint = ARMS_HINT;
       measureApply(m);
     }
@@ -904,9 +1269,12 @@
         const res = await poseDetect(img, { video: false, mask: true });
         const r = measureFrame(res, H);
         if (typeof r === 'string') { showToast('측정 실패: ' + r); return; }
-        const closed = r.armsClosed;
+        const closed = r.armsClosed, near = !r.hipR;
         delete r.armsClosed;
+        if (r.hipR) { learnHipRatio(r.hipR); delete r.hipR; }
         const m = measureFuse([r], H, W, g, 'photo');
+        m.range = near ? 'near' : 'full';
+        if (near) nearError(m);
         if (closed) m.hint = ARMS_HINT;
         measureApply(m);
       } catch (e) {
@@ -918,9 +1286,279 @@
       measureApply(measureFuse([], H, W, g, 'input'));
     }
 
+    // ---------- 실제 옷 등록: 모델 착용컷(정면) → 포즈 + 의류 분할 → 상/하의 자동 분리 → AR·룩키가 입는 투명 의상 ----------
+    const SEG_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite';
+    const WARDROBE_KEY = 'lookfit-wardrobe-v1';
+    const WARDROBE_MAX = 12;
+    const WARDROBE = [];
+    function wardrobeItem(g) {
+      const slotName = g.slot === 'bottom' ? '하의' : g.slot === 'full' ? '원피스' : '상의';
+      return {
+        ...g, custom: true, isPhoto: false, brand: '내 옷장', name: g.name || `내 ${slotName} · ${g.colorName}`,
+        kind: g.slot === 'bottom' ? 'bottom' : g.slot === 'full' ? 'dress' : 'top', category: g.slot === 'bottom' ? 'bottom' : 'top', gender: 'U',
+        price: 0, discount: 0, image: g.src, images: [g.src], thumbPos: '', tpo: [], rating: 0, reviews: 0, rank: 999,
+        fitStyle: '내 옷', fitId: '', ideal: { shoulder: 50, waist: 50, lower: 50 }, desc: '사진에서 자동으로 추출한 내 옷', material: '-', modelInfo: '-', expert: '',
+        ar: { slot: g.slot, src: g.src, kp: g.kp },
+      };
+    }
+    function wardrobeLoad() {
+      try {
+        const list = JSON.parse(localStorage.getItem(WARDROBE_KEY) || '[]');
+        WARDROBE.length = 0;
+        list.forEach((g) => { if (g && g.id && g.src && g.kp) WARDROBE.push(wardrobeItem(g)); });
+      } catch (_) {}
+    }
+    function wardrobeSave() {
+      const raw = WARDROBE.map(({ id, name, slot, color, colorName, src, kp, at }) => ({ id, name, slot, color, colorName, src, kp, at }));
+      try { localStorage.setItem(WARDROBE_KEY, JSON.stringify(raw)); return true; } catch (e) { return false; }
+    }
+    function wardrobeRemove(id) {
+      const i = WARDROBE.findIndex((g) => g.id === id);
+      if (i < 0) return;
+      WARDROBE.splice(i, 1);
+      delete AR.assets[id];
+      wardrobeSave();
+    }
+    async function segClothes(canvas) {
+      await poseWarmup();
+      if (POSE.kind !== 'mediapipe') throw new Error('의류 분할은 MediaPipe 엔진에서만 동작해요');
+      if (!POSE.seg) {
+        POSE.seg = await POSE.vision.ImageSegmenter.createFromOptions(POSE.files, {
+          baseOptions: { modelAssetPath: SEG_MODEL, delegate: POSE.delegate || 'GPU' }, runningMode: 'IMAGE', outputCategoryMask: false, outputConfidenceMasks: true,
+        });
+      }
+      let out = null;
+      POSE.seg.segment(canvas, (r) => {
+        const m = r.confidenceMasks && r.confidenceMasks[4];
+        if (m) out = { data: Float32Array.from(m.getAsFloat32Array()), w: m.width, h: m.height };
+      });
+      return out;
+    }
+    const nearestColor = (rgb) => Object.entries(G_COLORS).map(([name, [hex]]) => {
+      const n = parseInt(hex.slice(1), 16);
+      return [name, hex, Math.hypot(rgb[0] - (n >> 16), rgb[1] - ((n >> 8) & 255), rgb[2] - (n & 255))];
+    }).sort((a, b) => a[2] - b[2])[0];
+    // 이미지 → [{ slot, src(PNG dataURL), kp, color, colorName }] — 실패 시 이유 문자열
+    async function garmentExtract(img) {
+      const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+      const k0 = Math.min(1, 1000 / Math.max(iw, ih));
+      const W = Math.round(iw * k0), H = Math.round(ih * k0);
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const c = cv.getContext('2d');
+      c.drawImage(img, 0, 0, W, H);
+      const pose = await poseDetect(cv, { video: false });
+      const K = pose && arKeypoints(pose.keypoints, (x, y) => Pt(x, y));
+      if (!K) return '사람(어깨·골반)을 찾지 못했어요 · 정면 전신 착용 사진을 올려 주세요';
+      const seg = await segClothes(cv);
+      if (!seg) return '옷 영역을 찾지 못했어요';
+      const px = c.getImageData(0, 0, W, H).data;
+      const sx = seg.w / W, sy = seg.h / H;
+      const alpha = new Float32Array(W * H), raw = new Float32Array(W * H);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const v = seg.data[Math.min(seg.h - 1, Math.floor(y * sy)) * seg.w + Math.min(seg.w - 1, Math.floor(x * sx))];
+        raw[y * W + x] = v;
+        alpha[y * W + x] = Math.max(0, Math.min(1, (v - 0.35) / 0.3));
+      }
+      // 단색 배경이면 배경색과 가까운 가장자리 픽셀을 지워 헤일로 제거
+      const border = [];
+      for (let x = 0; x < W; x += 7) border.push(x, (H - 1) * W + x);
+      for (let y = 0; y < H; y += 7) border.push(y * W, y * W + W - 1);
+      const med = (arr) => arr.slice().sort((a, b) => a - b)[arr.length >> 1];
+      const bg = [0, 1, 2].map((ch) => med(border.map((i) => px[i * 4 + ch])));
+      const bgSpread = med(border.map((i) => Math.hypot(px[i * 4] - bg[0], px[i * 4 + 1] - bg[1], px[i * 4 + 2] - bg[2])));
+      const bgLum = bg[0] * 0.3 + bg[1] * 0.59 + bg[2] * 0.11;
+      if (bgSpread < 12 && bgLum > 150) for (let i = 0; i < W * H; i++) if (raw[i] > 0.1 && Math.hypot(px[i * 4] - bg[0], px[i * 4 + 1] - bg[1], px[i * 4 + 2] - bg[2]) < 26) alpha[i] = raw[i] = 0;
+      const sw = Math.hypot(K.ls.x - K.rs.x, K.ls.y - K.rs.y);
+      const shY = (K.ls.y + K.rs.y) / 2, hipY = (K.lh.y + K.rh.y) / 2, torso = hipY - shY;
+      // 몸 외곽(손목·팔꿈치 + 여유, 어깨 위는 머리 폭) 밖은 배경으로 본다 — 어두운 벽이 옷으로 잡히는 경우
+      {
+        const arm = pose.keypoints.filter((p) => /shoulder|elbow|wrist/.test(p.name) && (p.score == null || p.score >= 0.3)).map((p) => p.x);
+        const xL = Math.min(...arm) - sw * 0.35, xR = Math.max(...arm) + sw * 0.35, cx0 = (K.ls.x + K.rs.x) / 2;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          if (x < xL || x > xR || (y < shY - torso * 0.12 && Math.abs(x - cx0) > sw * 0.6)) alpha[y * W + x] = raw[y * W + x] = 0;
+        }
+      }
+      // 몸통과 이어진 덩어리만 남김(배경 오검출 제거) — 4px 셀 단위 8방향 연결
+      const inBody = new Uint8Array(W * H);
+      {
+        const C = 4, gw = Math.ceil(W / C), gh = Math.ceil(H / C);
+        const on = new Uint8Array(gw * gh), keep = new Uint8Array(gw * gh);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (raw[y * W + x] > 0.15) on[((y / C) | 0) * gw + ((x / C) | 0)]++;
+        const xs = [K.ls.x, K.rs.x, K.lh.x, K.rh.x], kneeY0 = (K.lk.y + K.rk.y) / 2;
+        const q = [];
+        for (let cy = Math.floor(shY / C); cy <= Math.min(gh - 1, Math.floor(kneeY0 / C)); cy++) {
+          for (let cx = Math.floor(Math.min(...xs) / C); cx <= Math.min(gw - 1, Math.floor(Math.max(...xs) / C)); cx++) {
+            const ci = cy * gw + cx;
+            if (cy >= 0 && cx >= 0 && on[ci] > 3 && !keep[ci]) { keep[ci] = 1; q.push(ci); }
+          }
+        }
+        while (q.length) {
+          const ci = q.pop(), cx = ci % gw, cy = (ci / gw) | 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const nx = cx + dx, ny = cy + dy, ni = ny * gw + nx;
+            if (nx < 0 || ny < 0 || nx >= gw || ny >= gh || keep[ni] || on[ni] <= 3) continue;
+            keep[ni] = 1; q.push(ni);
+          }
+        }
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const cx = (x / C) | 0, cy = (y / C) | 0;
+          let near = 0;
+          for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1 && !near; dx++) {
+            const nx = cx + dx, ny = cy + dy;
+            if (nx >= 0 && ny >= 0 && nx < gw && ny < gh && keep[ny * gw + nx]) near = 1;
+          }
+          if (!near) alpha[y * W + x] = raw[y * W + x] = 0;
+          else inBody[y * W + x] = 1;
+        }
+      }
+      const hipL = Math.min(K.lh.x, K.rh.x) - sw * 0.32, hipR = Math.max(K.lh.x, K.rh.x) + sw * 0.32;
+      const rowMean = (y0, y1, x0 = 0, x1 = W) => {
+        let n = 0; const s = [0, 0, 0];
+        for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) for (let x = Math.max(0, Math.round(x0)); x < Math.min(W, Math.round(x1)); x++) {
+          const i = y * W + x;
+          if (alpha[i] < 0.5) continue;
+          n++; s[0] += px[i * 4]; s[1] += px[i * 4 + 1]; s[2] += px[i * 4 + 2];
+        }
+        return n ? { n, rgb: s.map((v) => v / n) } : { n: 0, rgb: [0, 0, 0] };
+      };
+      // 상·하의 경계: 골반 주변에서 (피부 틈) 또는 (위아래 색 차이 최대) 행
+      let cut = -1, best = 0;
+      const gw = Math.max(6, Math.round(torso * 0.07)), gg = Math.round(torso * 0.04);
+      const lum = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
+      for (let y = Math.round(hipY - torso * 0.45); y <= Math.round(hipY + torso * 0.7); y++) {
+        const row = rowMean(y, y + 1, hipL, hipR);
+        if (row.n < sw * 0.08) { cut = y; best = 999; break; }
+        // 좁은 창은 또렷한 경계, 간격 둔 넓은 창은 프린지·그라데이션 밑단용
+        for (const [w, g] of [[8, 0], [gw, gg]]) {
+          const a = rowMean(y - w - g, y - g, hipL, hipR), b = rowMean(y + g, y + g + w, hipL, hipR);
+          if (a.n < sw * w * 0.25 || b.n < sw * w * 0.25) continue;
+          const dlt = Math.hypot(a.rgb[0] - b.rgb[0], a.rgb[1] - b.rgb[1], a.rgb[2] - b.rgb[2]);
+          // 어두운 조명 사진은 절대 색차가 작으므로 밝기 대비 상대 차이도 함께 본다
+          const score = Math.max(dlt / 42, dlt / (Math.min(lum(a.rgb), lum(b.rgb)) + 25) / 0.9);
+          if (score > best) { best = score; cut = y; }
+        }
+      }
+      let lowest = 0;
+      for (let y = H - 1; y > 0 && !lowest; y--) if (rowMean(y, y + 1).n > sw * 0.1) lowest = y;      const kneeY = (K.lk.y + K.rk.y) / 2;
+      const pieces = [];
+      if (cut > 0 && best > 0.9 && best < 999) {
+        // 넓은 창으로 찾은 경계는 밑단보다 아래일 수 있어, 아래 옷 색에 더 가까워지는 첫 행으로 올린다
+        const span = gw + gg;
+        const A = rowMean(cut - span - gw, cut - span, hipL, hipR).rgb, B = rowMean(cut + span, cut + span + gw, hipL, hipR).rgb;
+        const d = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+        for (let y = cut - span; y <= cut; y++) {
+          const r = rowMean(y, y + 2, hipL, hipR);
+          if (r.n && d(r.rgb, B) < d(r.rgb, A)) { cut = y; break; }
+        }
+      }
+      if (cut > 0 && best > 0.9) {
+        const topRgb = rowMean(cut - 30, cut).rgb;
+        const shL = Math.min(K.ls.x, K.rs.x) - sw * 0.05, shR = Math.max(K.ls.x, K.rs.x) + sw * 0.05;
+        const sleeveTol = Math.min(45, Math.max(18, lum(topRgb) * 0.8));
+        const sleeve = (x, y, i) => y > cut && y < cut + torso * 0.5 && (x < shL || x > shR) && Math.abs(x - K.lk.x) > sw * 0.3 && Math.abs(x - K.rk.x) > sw * 0.3 && Math.hypot(px[i * 4] - topRgb[0], px[i * 4 + 1] - topRgb[1], px[i * 4 + 2] - topRgb[2]) < sleeveTol;
+        pieces.push({ slot: 'top', keep: (x, y, i) => y <= cut || sleeve(x, y, i) });
+        const botRgb = rowMean(cut + torso * 0.4, cut + torso * 0.6, hipL, hipR).rgb;
+        const cd = (i, c) => Math.hypot(px[i * 4] - c[0], px[i * 4 + 1] - c[1], px[i * 4 + 2] - c[2]);
+        const distinct = Math.hypot(topRgb[0] - botRgb[0], topRgb[1] - botRgb[1], topRgb[2] - botRgb[2]) > 18;
+        // 밑단 프린지처럼 경계 아래로 늘어진 윗옷 조각은 하의에서 뺀다
+        // 골반 통로 → 전체 폭을 서서히 넓혀 하의 윗단에 가로 계단선이 생기지 않게
+        const inWidening = (x, y) => {
+          const f = Math.max(0, Math.min(1, (y - cut - torso * 0.15) / (torso * 0.35)));
+          return x >= hipL - f * sw * 1.5 && x <= hipR + f * sw * 1.5;
+        };
+        const topFringe = (y, i) => distinct && y < cut + torso * 0.6 && cd(i, topRgb) + 6 < cd(i, botRgb);
+        pieces.push({ slot: 'bottom', keep: (x, y, i) => y > cut && !sleeve(x, y, i) && !topFringe(y, i) && inWidening(x, y) });
+      } else if (lowest > kneeY - torso * 0.2) {
+        pieces.push({ slot: 'full', keep: () => true });
+      } else {
+        pieces.push({ slot: 'top', keep: () => true });
+      }
+      const out = [];
+      for (const pc of pieces) {
+        let x0 = W, y0 = H, x1 = -1, y1 = -1, n = 0;
+        const s = [0, 0, 0];
+        for (let i = 0; i < W * H; i++) {
+          if (alpha[i] <= 0.6 || !pc.keep(i % W, (i / W) | 0, i)) continue;
+          n++; s[0] += px[i * 4]; s[1] += px[i * 4 + 1]; s[2] += px[i * 4 + 2];
+        }
+        if (n < sw * sw * 0.3) continue;
+        const mean = s.map((v) => v / n);
+        // 분할 신뢰도가 낮은 부분(어두운 조명의 회색 바지 등)은 옷 평균색과 가까우면 채운다
+        const tol = Math.max(14, lum(mean) * 0.45), mLum = lum(mean);
+        // 후드·목 위쪽은 다른 사람 얼굴을 덮으므로 턱선 부근에서 서서히 투명하게
+        const chin0 = shY - torso * 0.2, chin1 = shY - torso * 0.3;
+        const a2 = new Float32Array(W * H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const i = y * W + x;
+          let a = alpha[i];
+          if (a < 0.9 && inBody[i] && raw[i] > 0.12
+            && Math.hypot(px[i * 4] - mean[0], px[i * 4 + 1] - mean[1], px[i * 4 + 2] - mean[2]) < tol) a = Math.max(a, 0.92);
+          // 옷보다 훨씬 밝고 분할 확신이 낮은 픽셀 = 배경(조명 받은 벽 등)
+          if (a > 0 && raw[i] < 0.8 && lum([px[i * 4], px[i * 4 + 1], px[i * 4 + 2]]) > mLum + 80) a = 0;
+          if (pc.slot !== 'bottom' && y < chin0) a *= Math.max(0, (y - chin1) / (chin0 - chin1));
+          if (a <= 0.02 || !pc.keep(x, y, i)) continue;
+          a2[i] = a;
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+        const pw = x1 - x0 + 1, ph = y1 - y0 + 1;        const k1 = Math.min(1, 720 / ph);
+        const oc = document.createElement('canvas');
+        oc.width = Math.round(pw * k1); oc.height = Math.round(ph * k1);
+        const tmp = document.createElement('canvas');
+        tmp.width = pw; tmp.height = ph;
+        const tc = tmp.getContext('2d');
+        const id = tc.createImageData(pw, ph);
+        for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+          const si = (y + y0) * W + (x + x0), di = (y * pw + x) * 4;
+          id.data[di] = px[si * 4]; id.data[di + 1] = px[si * 4 + 1]; id.data[di + 2] = px[si * 4 + 2]; id.data[di + 3] = Math.round(a2[si] * 255);
+        }
+        tc.putImageData(id, 0, 0);
+        oc.getContext('2d').drawImage(tmp, 0, 0, oc.width, oc.height);
+        const rgb = s.map((v) => v / n);
+        const [colorName] = nearestColor(rgb);
+        const kp = {};
+        ['ls', 'rs', 'lh', 'rh', 'lk', 'rk', 'la', 'ra'].forEach((key) => { kp[key] = [Math.round((K[key].x - x0) * k1), Math.round((K[key].y - y0) * k1)]; });
+        const hex = '#' + rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+        out.push({ slot: pc.slot, src: oc.toDataURL('image/png'), kp, color: hex, colorName, w: oc.width, h: oc.height });
+      }
+      return out.length ? out : '옷 영역이 너무 작아요 · 옷이 크게 보이는 정면 사진을 올려 주세요';
+    }
+    async function garmentFromPhoto(dataUrl) {
+      const img = new Image();
+      img.src = dataUrl;
+      try { await img.decode(); } catch (_) { showToast('이미지를 읽지 못했어요'); return; }
+      showToast('사진에서 옷을 추출하는 중… (처음 한 번은 모델을 받아요)');
+      let res;
+      try { res = await garmentExtract(img); } catch (e) { showToast('옷 추출 실패: ' + ((e && e.message) || e)); return; }
+      if (typeof res === 'string') { showToast(res); return; }
+      const added = res.map((g, i) => wardrobeItem({ ...g, id: 'u' + Date.now().toString(36) + i, at: Date.now() }));
+      WARDROBE.unshift(...added);
+      while (WARDROBE.length > WARDROBE_MAX) WARDROBE.pop();
+      if (!wardrobeSave()) {
+        added.forEach((g) => wardrobeRemove(g.id));
+        showToast('저장 공간이 부족해요 · MY에서 등록한 옷을 정리해 주세요');
+        return;
+      }
+      added.forEach((g) => { if (!state.ownedIds.includes(g.id)) state.ownedIds.unshift(g.id); });
+      save();
+      AR.railIds = arRailIds([AR.outfit.top, AR.outfit.bottom].filter(Boolean));
+      if (AR.open) {
+        AR.outfit = { top: AR.outfit.top, bottom: AR.outfit.bottom };
+        added.forEach((g) => arPut(g));
+        AR.focusId = added[0].id;
+        state.arCat = '내 옷';
+        arRenderCats(); arRenderRail(); arRenderSizes();
+        if (AR.kp || AR.srcPose) arTracked();
+      }
+      renderCloset(); renderMy();
+      showToast(`내 옷 ${added.length}벌 등록 완료 · ${added.map((g) => g.ar.slot === 'bottom' ? '하의' : g.ar.slot === 'full' ? '원피스' : '상의').join(' + ')} · 룩키에게도 입혀 보세요`);
+      return added;
+    }
+
     // ---------- 룩키 캐릭터: 투명 캐릭터 이미지 + 관절 앵커 → 같은 메쉬 엔진으로 실제 상품을 입힘 ----------
     const CHAR = { img: null, ready: false, K: null, waiters: [] };
     const CHAR_SLEEVE_WIDEN = 1.7;
+    const CHAR_FIT_SCALE = { top: 1.04, full: 1.06, bottom: 1.14 };
     function charKp() {
       if (!CHAR.K) CHAR.K = arKeypoints(Object.entries(CHAR_MODEL.kp).map(([name, [x, y]]) => ({ name, x, y, score: 1 })), (x, y) => Pt(x, y));
       return CHAR.K;
@@ -943,10 +1581,14 @@
       const K = Object.fromEntries(Object.entries(charKp()).map(([k, p]) => [k, Pt(r.x + p.x * r.s, r.y + p.y * r.s)]));
       const items = ids.map(arItem).filter(arCapable).sort((a, b) => (a.ar.slot === 'bottom' ? 0 : 1) - (b.ar.slot === 'bottom' ? 0 : 1));
       let pending = false;
+      items.forEach((it) => { if (!assetReady(arAsset(it))) pending = true; });
       const cut = Math.min(K.ls.y, K.rs.y) - Math.abs(K.ls.x - K.rs.x) * 0.2;
+      const CW = ctx.canvas.width, CH = ctx.canvas.height;
+      const S = offCanvas('sil', CW, CH);
+      if (S) S.ctx.drawImage(CHAR.img, r.x, r.y, r.w, r.h);
       ctx.save();
       ctx.beginPath(); ctx.rect(x, cut, w, y + h - cut); ctx.clip();
-      items.forEach((it) => { if (!assetReady(arAsset(it))) pending = true; arDrawGarment(ctx, it, K, 1, CHAR_SLEEVE_WIDEN); });
+      arDrawOutfit(ctx, items, K, 1, CHAR_SLEEVE_WIDEN, CW, CH, { sil: S && S.c, scaleFor: (it) => CHAR_FIT_SCALE[it.ar.slot] || 1 });
       ctx.restore();
       return pending;
     }

@@ -110,9 +110,10 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
   assert('하단 찜 버튼 토글', $('btnToggleWish').classList.contains('on') && ev(`state.wishlist.includes('${arCard.dataset.id}')`));
   click($('btnToCloset'));
   assert('내 옷장에 추가', ev(`state.ownedIds.includes('${arCard.dataset.id}')`) && $('btnToCloset').disabled);
-  const noAr = ev('CATALOG.find((c) => !c.ar).id');
-  ev(`openProduct('${noAr}')`);
+  ev(`CATALOG.push({ ...CATALOG[0], id: 'qa_noar', ar: null }); openProduct('qa_noar')`);
   assert('AR 미지원 상품은 버튼 비활성', $('btnPdpAR').disabled && $('btnHeroAR').style.display === 'none');
+  ev(`CATALOG.splice(CATALOG.findIndex((c) => c.id === 'qa_noar'), 1); openProduct('${arCard.dataset.id}')`);
+  assert('사진 파이프라인으로 만든 판초·트라우저도 AR 지원', ev(`['p08','p09'].every((id) => { const a = arItem(id); return a && a.ar && AR_PHOTO_ANCHORS[a.ar.piece]; })`));
   click(document.querySelector('#productModal .js-cart'));
   assert('장바구니 시트 열림', $('cartSheet').classList.contains('show') && $('cartList').textContent.includes('사이즈 XL') && $('cartSum').textContent.includes('쿠폰'));
   click($('cartClose'));
@@ -169,7 +170,13 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
   })()`);
   assert('단일 프레임 실측 (A자 자세: 마스크 폭 → cm)', typeof frame.open === 'object' && frame.open.shoulder > 30 && frame.open.shoulder < 45 && frame.open.chestB > 25 && frame.open.hipB > 25 && frame.open.leg > 60 && frame.open.arm > 40 && !frame.open.armsClosed, JSON.stringify(frame.open));
   assert('팔이 몸에 붙으면 폭 측정 제외 + 안내', frame.closed.armsClosed === true && !frame.closed.chestB && !frame.closed.waistB && frame.closed.leg > 60, JSON.stringify(frame.closed));
-  assert('발이 잘리면 거절', typeof ev(`measureFrame({ w: 640, h: 480, keypoints: [['nose',320,60],['left_shoulder',360,105],['right_shoulder',280,105],['left_hip',345,235],['right_hip',295,235],['left_knee',342,335],['right_knee',298,335],['left_ankle',340,478],['right_ankle',300,478]].map(([name,x,y]) => ({ name, x, y, score: .9 })) }, 170)`) === 'string');
+  const kpList = (arr) => JSON.stringify(arr.map(([name, x, y]) => ({ name, x, y, score: 0.9 })));
+  const base = [['nose', 320, 60], ['left_shoulder', 360, 105], ['right_shoulder', 280, 105], ['left_hip', 345, 235], ['right_hip', 295, 235]];
+  const near = ev(`measureFrame({ w: 640, h: 480, keypoints: ${kpList([...base, ['left_knee', 342, 335], ['right_knee', 298, 335], ['left_ankle', 340, 478], ['right_ankle', 300, 478]])} }, 170)`);
+  assert('발이 잘려도 무릎까지 보이면 근거리 측정(다리 제외)', typeof near === 'object' && !near.leg && !near.hipR && near.torso > 35 && near.torso < 70, JSON.stringify(near));
+  assert('무릎이 안 보이면 뒤로 가라는 안내', /뒤로/.test(ev(`measureFrame({ w: 640, h: 480, keypoints: ${kpList(base)} }, 170)`)));
+  assert('측정 범위 판정 (전신/근거리/상반신)', ev(`[measureRange({ w: 640, h: 480, keypoints: ${kpList([...base, ['left_knee', 342, 335], ['right_knee', 298, 335], ['left_ankle', 340, 430], ['right_ankle', 300, 430]])} }), measureRange({ w: 640, h: 480, keypoints: ${kpList([...base, ['left_knee', 342, 335], ['right_knee', 298, 335]])} }), measureRange({ w: 640, h: 480, keypoints: ${kpList(base)} })].join()`) === 'full,near,half');
+  assert('전신 프레임으로 정수리~골반 비율 학습', typeof frame.open.hipR === 'number' && ev(`(() => { const b = learnModel().hipR; learnHipRatio(0.5); const a = learnModel().hipR; return a > b; })()`));
   const types = ev(`[
     measureBodyType({ height: 175, values: { chest: 104, waist: 80, hip: 92, shoulder: 47 } }).type,
     measureBodyType({ height: 165, values: { chest: 86, waist: 70, hip: 97, shoulder: 38 } }).type,
@@ -186,7 +193,7 @@ try { ({ JSDOM, VirtualConsole } = require(path.join(ROOT, 'node_modules', 'jsdo
     $('weightInput').value = '72'; $('weightInput').dispatchEvent(new W.Event('change', { bubbles: true }));
     const expBefore = ev('state.exp + state.level * 100');
     click($('btnMeasureStart'));
-    assert('카메라 없으면 측정 시작 대신 안내', ev('MEASURE.countdown') === 0 && $('toast').textContent.includes('카메라'));
+    assert('카메라 없으면 측정 대기 대신 안내', ev('MEASURE.countdown') === 0 && !ev('MEASURE.armed') && $('toast').textContent.includes('카메라'));
     click($('btnMeasureInput'));
     const m = ev('state.measure');
     assert('입력값 추정 결과 저장', m && m.method === 'input' && m.height === 176 && m.weight === 72 && m.sizes.top && m.sizes.bottom);

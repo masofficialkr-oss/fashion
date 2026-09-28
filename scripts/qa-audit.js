@@ -167,6 +167,24 @@ function scanLayout() {
   await sleep(500);
   await snap('09-ar-arms');
   check('A-03', '팔 관절 추적 → 소매 분리 렌더', await page.evaluate(() => !!(AR.kp && AR.kp.le && AR.kp.re)));
+  const pc = await page.evaluate(() => {
+    const size = (el) => { const r = el.getBoundingClientRect(), s = r.width / el.offsetWidth || 1; return [r.width / s, r.height / s]; };
+    const navs = ['arPrev', 'arNext'].map((id) => document.getElementById(id));
+    const tools = [...document.querySelectorAll('.ar-tools button')];
+    return {
+      navs: navs.every((b) => b && size(b)[0] >= 28 && size(b)[1] >= 40),
+      tools: tools.length === 3 && tools.every((b) => size(b)[0] >= 32 && b.getAttribute('aria-label')),
+      cats: [...document.querySelectorAll('#arCats [data-cat]')].map((b) => b.textContent),
+      add: !!document.querySelector('#arRail #arAddGarment'),
+    };
+  });
+  check('A-07', 'PC 조작: ‹ › 버튼 · 카테고리 칩(내 옷은 등록 전 숨김)', pc.navs && pc.cats.length === 4 && !pc.cats.includes('내 옷'), JSON.stringify(pc));
+  check('A-08', '전체화면 · 제스처 · 음성 토글 (라벨 포함)', pc.tools, JSON.stringify(pc));
+  check('A-09', '레일 끝 "+ 옷 등록" (사진으로 내 옷 추가)', pc.add);
+  await page.evaluate(() => { state.arCat = '원피스·전신'; arRenderCats(); arRenderRail(); });
+  await snap('09b-ar-cat-full');
+  check('A-10', '카테고리 전환 시 레일 필터', await page.evaluate(() => [...document.querySelectorAll('#arRail [data-ar]')].every((b) => arItem(b.dataset.ar).ar.slot === 'full')));
+  await page.evaluate(() => { state.arCat = '전체'; arRenderCats(); arRenderRail(); });
   await click('#arSeg [data-view="measure"]');
   await snap('10-ar-measure');
   check('A-04', '측정 패널: 성별·키·몸무게 + 카메라/사진/입력 측정', (await count('#genderSelect')) + (await count('#heightInput')) + (await count('#weightInput')) + (await count('#btnMeasureStart')) + (await count('#btnMeasurePhoto')) + (await count('#btnMeasureInput')) === 6);
@@ -193,6 +211,7 @@ function scanLayout() {
   await snap('14-my', () => tab('my'));
   check('M-01', '결제 후 MY > 주문 내역', (await count('#orderList .order-line')) === 1);
   check('M-02', '측정 치수 요약 표시', await page.$eval('#myBody', (e) => /182/.test(e.textContent)));
+  check('M-03', '사진으로 등록한 옷: 빈 상태 안내 + 전체 삭제 숨김', await page.evaluate(() => /착용컷/.test(document.getElementById('myWardrobe').textContent) && getComputedStyle(document.getElementById('btnWardrobeClear')).display === 'none'));
   await snap('15-home-after', () => tab('home'));
 
   console.log('\n== 새로고침 후 상태 유지 ==');
