@@ -1,0 +1,55 @@
+// 주요 화면 스크린샷: node scripts/shots.js [outDir]
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const { launch, startServer } = require('./lib-browser');
+
+(async () => {
+  const out = process.argv[2] || path.join(os.homedir(), '.lookfit-tools', 'shots');
+  fs.mkdirSync(out, { recursive: true });
+  const server = await startServer(8791);
+  const browser = await launch();
+  const page = await browser.newPage();
+  await page.setViewport({ width: 430, height: 820, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !/favicon|404/.test(m.text())) errors.push(m.text()); });
+  await page.goto('http://localhost:8791/index.html', { waitUntil: 'networkidle2' });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'networkidle2' });
+  const shot = async (name) => { await new Promise((r) => setTimeout(r, 700)); await page.screenshot({ path: path.join(out, name + '.png') }); };
+  const click = (sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
+
+  await shot('01-home');
+  await page.evaluate(() => { state.wornCatalog = { topId: 'g041', bottomId: 'g081' }; state.level = 3; save(); renderHome(); });
+  await shot('02-home-worn-t2');
+  await page.evaluate(() => { state.level = 6; renderHome(); });
+  await shot('03-home-t3');
+  await click('[data-tab="explore"]');
+  await shot('04-explore');
+  await click('#exploreGrid .p-card');
+  await shot('05-pdp');
+  await page.evaluate(() => document.getElementById('detailScroll').scrollTop = 700);
+  await shot('06-pdp-scroll');
+  await click('#modalClose');
+  await page.evaluate(() => { AR.view = 'tryon'; });
+  await click('[data-tab="ar"]');
+  await click('#arModes [data-mode="sample"]');
+  await new Promise((r) => setTimeout(r, 1500));
+  await shot('07-ar-tryon-sample');
+  await click('#arSeg [data-view="measure"]');
+  await shot('08-ar-measure');
+  await click('#btnMeasureInput');
+  await page.evaluate(() => document.getElementById('arMeasurePanel').scrollTop = 400);
+  await shot('09-ar-measure-result');
+  await click('[data-tab="closet"]');
+  await page.evaluate(() => { const b = document.querySelector('#closetRec [data-sel]'); if (b) b.click(); });
+  await shot('10-closet');
+  await click('[data-tab="my"]');
+  await shot('11-my');
+  await click('[data-tab="home"]');
+  await shot('12-home-measured');
+  console.log(JSON.stringify({ out, errors, engine: await page.evaluate(() => POSE.label || POSE.error) }, null, 1));
+  await browser.close();
+  server.close();
+})().catch((e) => { console.error(e); process.exit(1); });

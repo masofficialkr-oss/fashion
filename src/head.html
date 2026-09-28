@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#111111" />
+  <title>LOOKFIT · AR 가상 시착</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <style>
+    :root {
+      --bg: #F7F7F5; --surface: #fff; --ink: #111; --ink-2: #333; --muted: #767676; --faint: #A8A8A8; --border: #EBEBEB; --line: #F2F2F0;
+      --mint: #19B394; --mint-soft: #E3F6F1; --mint-ink: #0B7F68; --sale: #E0452B; --star: #FFB400;
+      --dark: #0E0F11; --dark-2: #1A1C1F; --dark-3: #26292D;
+      --r-lg: 20px; --r-md: 14px; --r-sm: 10px;
+      --canvas-w: 390px; --canvas-h: 780px; --tab-h: 62px; --status-h: 30px;
+      --shadow: 0 24px 60px rgba(17,17,17,.18); --shadow-sm: 0 4px 14px rgba(17,17,17,.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: #E4E6E8; font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif; color: var(--ink); letter-spacing: -0.01em; }
+    body { display: grid; place-items: center; min-height: 100%; padding: 12px; overflow: auto; }
+    button, input, select { font: inherit; color: inherit; letter-spacing: inherit; }
+    button { cursor: pointer; border: 0; background: none; }
+    button:disabled { cursor: default; opacity: .45; }
+    img { display: block; }
+    svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .phone-shell { width: var(--canvas-w); height: var(--canvas-h); flex-shrink: 0; }
+    .phone {
+      width: var(--canvas-w); height: var(--canvas-h); background: var(--bg); border-radius: 34px; overflow: hidden;
+      display: flex; flex-direction: column; position: relative; box-shadow: var(--shadow); transform-origin: top left;
+    }
+    .status-bar { height: var(--status-h); flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 2px 24px 0; font-size: .74rem; font-weight: 650; z-index: 5; }
+    .status-bar .sig { display: flex; gap: 5px; align-items: center; }
+    .status-bar .sig i { display: block; width: 16px; height: 9px; border: 1.5px solid currentColor; border-radius: 3px; position: relative; }
+    .status-bar .sig i::after { content: ''; position: absolute; inset: 1px 3px 1px 1px; background: currentColor; border-radius: 1px; }
+    .phone.dark .status-bar { color: #fff; background: var(--dark); }
+    .screens { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+    .screen { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; display: none; scrollbar-width: none; }
+    .screen::-webkit-scrollbar { display: none; }
+    .screen.active { display: block; }
+    .pad { padding: 0 18px; }
+
+    /* ---------- 공통 헤더 · 버튼 ---------- */
+    .topbar { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 12px 0 18px; position: sticky; top: 0; background: var(--bg); z-index: 4; }
+    .topbar h2 { font-size: 1.28rem; font-weight: 800; letter-spacing: -0.03em; }
+    .wordmark { font-size: 1.32rem; font-weight: 900; letter-spacing: -0.04em; }
+    .wordmark b { color: var(--mint); font-weight: 900; }
+    .icon-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; position: relative; }
+    .icon-btn:active { background: rgba(0,0,0,.05); }
+    .badge-dot { position: absolute; top: 4px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--sale); color: #fff; font-size: .62rem; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--bg); }
+    .badge-dot:empty, .badge-dot[data-n="0"] { display: none; }
+    .btn { height: 50px; border-radius: 12px; font-weight: 700; font-size: .95rem; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 16px; transition: transform .12s; }
+    .btn:active:not(:disabled) { transform: scale(.98); }
+    .btn.primary { background: var(--ink); color: #fff; }
+    .btn.mint { background: var(--mint); color: #fff; }
+    .btn.line { background: var(--surface); border: 1px solid #DADADA; color: var(--ink); }
+    .btn.ghost { background: #F0F0EE; color: var(--ink); }
+    .btn.sm { height: 38px; font-size: .82rem; border-radius: 10px; padding: 0 12px; }
+    .btn.block { width: 100%; }
+    .link { color: var(--muted); font-size: .8rem; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; padding: 8px 6px; margin: -8px -6px; }
+    .section-h { display: flex; align-items: baseline; justify-content: space-between; margin: 26px 0 12px; }
+    .section-h h3 { font-size: 1.06rem; font-weight: 800; letter-spacing: -0.03em; }
+    .section-h span { font-size: .78rem; color: var(--muted); }
+    .card { background: var(--surface); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--shadow-sm); }
+    .muted { color: var(--muted); }
+    .empty-state { display: grid; place-items: center; text-align: center; gap: 10px; padding: 36px 20px; color: var(--muted); font-size: .88rem; line-height: 1.5; }
+    .empty-state strong { color: var(--ink); font-size: 1rem; }
+
+    /* ---------- 홈: 룩키 키우기 ---------- */
+    .stage { position: relative; margin: 4px 16px 0; height: 392px; border-radius: 26px; overflow: hidden; background: linear-gradient(180deg, #E8F5F1 0%, #F4F8F6 62%, #E3EEEA 100%); }
+    .stage::before { content: ''; position: absolute; left: 50%; bottom: 44px; width: 210px; height: 30px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(closest-side, rgba(17,40,34,.16), transparent); }
+    .stage.t2 { background: linear-gradient(180deg, #FCE9E1 0%, #F4ECF8 60%, #EDE3F3 100%); }
+    .stage.t3 { background: radial-gradient(120% 70% at 50% 0%, #4A4F58 0%, #202328 55%, #16181B 100%); color: #fff; }
+    .stage.t3::after { content: ''; position: absolute; left: 50%; top: -40px; width: 260px; height: 460px; transform: translateX(-50%); background: linear-gradient(180deg, rgba(255,255,255,.16), transparent 80%); clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); pointer-events: none; }
+    .stage.t4 { background: radial-gradient(110% 70% at 50% 10%, #FFF4D6 0%, #F7D98B 45%, #C99A3B 100%); }
+    .stage.t3 .stage-meta small, .stage.t3 .exp-row { color: rgba(255,255,255,.72); }
+    .stage.t3 .exp-track { background: rgba(255,255,255,.18); }
+    #avatarCanvas { position: absolute; left: 50%; top: 58px; width: 210px; height: 282px; transform: translateX(-50%); }
+    #avatarCanvas.pop { animation: pop .5s cubic-bezier(.3,1.6,.5,1); }
+    @keyframes pop { 0% { transform: translateX(-50%) scale(.94); } 60% { transform: translateX(-50%) scale(1.04); } 100% { transform: translateX(-50%) scale(1); } }
+    .stage-meta { position: absolute; left: 18px; top: 16px; right: 18px; display: flex; justify-content: space-between; align-items: flex-start; z-index: 2; }
+    .tier-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.9); color: var(--ink); border-radius: 999px; padding: 6px 12px 6px 7px; font-size: .78rem; font-weight: 800; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .tier-badge i { font-style: normal; background: var(--ink); color: #fff; border-radius: 999px; padding: 2px 7px; font-size: .68rem; }
+    .stage-meta small { display: block; font-size: .72rem; color: var(--muted); margin-top: 6px; font-weight: 600; padding-left: 4px; }
+    .bubble { position: absolute; right: 16px; top: 64px; max-width: 128px; background: #fff; color: var(--ink); border-radius: 16px 16px 4px 16px; padding: 10px 12px; font-size: .76rem; line-height: 1.4; font-weight: 600; box-shadow: 0 6px 18px rgba(0,0,0,.08); z-index: 2; }
+    .bubble em { font-style: normal; color: var(--mint-ink); font-weight: 800; }
+    .worn-row { position: absolute; left: 14px; top: 132px; display: grid; gap: 8px; z-index: 2; }
+    .worn-row button { width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,.92); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .worn-row img { width: 100%; height: 100%; object-fit: cover; }
+    .exp-row { position: absolute; left: 18px; right: 18px; bottom: 16px; display: grid; gap: 7px; font-size: .74rem; font-weight: 700; color: var(--muted); z-index: 2; }
+    .exp-row .lbl { display: flex; justify-content: space-between; }
+    .exp-row b { color: inherit; }
+    .exp-track { height: 6px; border-radius: 6px; background: rgba(17,17,17,.08); overflow: hidden; }
+    .exp-fill { height: 100%; width: 0; border-radius: 6px; background: var(--mint); transition: width .5s; }
+    .home-actions { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 8px; margin: 12px 16px 0; }
+    .home-actions .btn { height: 48px; font-size: .84rem; padding: 0 8px; }
+    .grow-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 16px 0; }
+    .grow-row div { background: var(--surface); border-radius: 12px; padding: 9px 4px; text-align: center; font-size: .68rem; color: var(--muted); font-weight: 600; line-height: 1.35; border: 1px solid var(--border); }
+    .grow-row div b { display: block; color: var(--ink); font-size: .74rem; }
+    .grow-row div.done { background: var(--mint-soft); border-color: transparent; color: var(--mint-ink); }
+    .grow-row div.done b { color: var(--mint-ink); }
+    .cta-card { margin: 14px 16px 0; border-radius: var(--r-lg); padding: 16px 16px 16px 18px; background: var(--ink); color: #fff; display: flex; align-items: center; gap: 12px; text-align: left; width: calc(100% - 32px); }
+    .cta-card .t { flex: 1; }
+    .cta-card strong { display: block; font-size: .95rem; margin-bottom: 3px; }
+    .cta-card span { font-size: .76rem; color: rgba(255,255,255,.66); }
+    .cta-card .go { width: 34px; height: 34px; border-radius: 50%; background: var(--mint); display: grid; place-items: center; }
+    .rail { display: flex; gap: 10px; overflow-x: auto; padding: 0 18px 4px; scrollbar-width: none; scroll-snap-type: x mandatory; }
+    .rail::-webkit-scrollbar { display: none; }
+    .mini-card { width: 128px; flex-shrink: 0; text-align: left; scroll-snap-align: start; }
+    .mini-card .ph { position: relative; width: 128px; height: 160px; border-radius: 12px; overflow: hidden; background: #EFEFED; }
+    .mini-card img { width: 100%; height: 100%; object-fit: cover; }
+    .mini-card .nm { font-size: .78rem; margin-top: 7px; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+    .mini-card .pr { font-size: .82rem; font-weight: 800; margin-top: 2px; }
+    .mini-card .pr em { color: var(--sale); font-style: normal; margin-right: 4px; }
+    .pos-top { object-position: center 18% !important; }
+    .pos-upper { object-position: center 30% !important; }
+    .pos-bottom { object-position: center 80% !important; }
+    .tag { position: absolute; left: 8px; top: 8px; display: flex; gap: 4px; }
+    .tag span { font-size: .6rem; font-weight: 800; padding: 3px 6px; border-radius: 5px; background: rgba(17,17,17,.82); color: #fff; letter-spacing: .02em; }
+    .tag span.ar { background: var(--mint); }
+
+    /* ---------- 탐색 ---------- */
+    .search { margin: 0 18px; height: 44px; border-radius: 12px; background: #EDEDEB; display: flex; align-items: center; gap: 8px; padding: 0 14px; color: var(--muted); }
+    .search input { flex: 1; border: 0; background: transparent; outline: none; font-size: .9rem; color: var(--ink); min-width: 0; }
+    .cat-tabs { display: flex; gap: 20px; padding: 0 18px; margin-top: 14px; border-bottom: 1px solid var(--border); }
+    .cat-tabs button { padding: 10px 0 11px; font-size: .92rem; font-weight: 600; color: var(--faint); position: relative; }
+    .cat-tabs button.active { color: var(--ink); font-weight: 800; }
+    .cat-tabs button.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--ink); }
+    .chip-row { display: flex; gap: 6px; overflow-x: auto; padding: 12px 18px 0; scrollbar-width: none; }
+    .chip-row::-webkit-scrollbar { display: none; }
+    .chip { flex-shrink: 0; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #DEDEDE; background: var(--surface); font-size: .78rem; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }
+    .chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .chip.ar-chip-l.active { background: var(--mint); border-color: var(--mint); }
+    .list-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px 10px; font-size: .8rem; color: var(--muted); }
+    .list-head b { color: var(--ink); }
+    .sort-select { border: 0; background: transparent; font-size: .8rem; font-weight: 700; color: var(--ink); outline: none; padding-right: 2px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 10px; padding: 0 18px 28px; }
+    .p-card { text-align: left; min-width: 0; }
+    .p-card .ph { position: relative; aspect-ratio: 4 / 5; border-radius: 12px; overflow: hidden; background: #EFEFED; }
+    .p-card .ph img { width: 100%; height: 100%; object-fit: cover; }
+    .heart { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; display: grid; place-items: center; color: #fff; filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
+    .heart.on { color: var(--sale); }
+    .heart.on svg { fill: currentColor; }
+    .p-card .br { font-size: .74rem; font-weight: 800; margin-top: 9px; }
+    .p-card .nm { font-size: .8rem; color: var(--ink-2); margin-top: 2px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.1em; }
+    .p-card .pr { margin-top: 5px; font-size: .92rem; font-weight: 800; }
+    .p-card .pr em { color: var(--sale); font-style: normal; margin-right: 4px; }
+    .p-card .meta { margin-top: 4px; display: flex; gap: 6px; align-items: center; font-size: .7rem; color: var(--muted); flex-wrap: wrap; }
+    .p-card .meta .st { color: var(--ink-2); font-weight: 600; }
+    .p-card .meta .st::before { content: '★'; color: var(--star); margin-right: 2px; }
+    .fit-pill { font-size: .66rem; font-weight: 800; color: var(--mint-ink); background: var(--mint-soft); padding: 2px 6px; border-radius: 5px; }
+
+    /* ---------- AR 탭 ---------- */
+    .screen.ar { background: var(--dark); color: #fff; display: none; flex-direction: column; overflow: hidden; }
+    .screen.ar.active { display: flex; }
+    .ar-top { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 6px 16px 10px; gap: 10px; }
+    .seg { display: inline-flex; background: var(--dark-3); border-radius: 12px; padding: 3px; }
+    .seg button { height: 34px; padding: 0 16px; border-radius: 9px; font-size: .84rem; font-weight: 700; color: rgba(255,255,255,.6); }
+    .seg button.active { background: #fff; color: var(--ink); }
+    .ar-engine { font-size: .64rem; color: rgba(255,255,255,.5); text-align: right; line-height: 1.3; }
+    .ar-engine b { display: block; color: var(--mint); font-size: .68rem; }
+    .ar-stage { position: relative; flex: 1; min-height: 240px; margin: 0 12px; border-radius: 22px; overflow: hidden; background: #141416; }
+    #arCanvas { width: 100%; height: 100%; display: block; }
+    #arVideo { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .ar-src { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; z-index: 3; }
+    .ar-src button { height: 30px; padding: 0 11px; border-radius: 999px; background: rgba(0,0,0,.5); color: #fff; font-size: .74rem; font-weight: 700; backdrop-filter: blur(8px); display: inline-flex; align-items: center; gap: 5px; }
+    .ar-src button svg.i { width: 15px; height: 15px; }
+    .ar-src button.active { background: #fff; color: var(--ink); }
+    .ar-status { position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 3; background: rgba(0,0,0,.55); backdrop-filter: blur(8px); border-radius: 12px; padding: 9px 12px; font-size: .74rem; font-weight: 600; line-height: 1.4; }
+    .ar-guide { position: absolute; inset: 44px 0 50px; display: none; place-items: center; pointer-events: none; z-index: 2; }
+    .ar-guide.show { display: grid; }
+    .ar-guide svg { height: 92%; opacity: .55; }
+    .measure-ov { position: absolute; inset: 0; display: none; place-items: center; z-index: 4; pointer-events: none; }
+    .measure-ov.show { display: grid; }
+    .measure-ov .cd { font-size: 5rem; font-weight: 900; text-shadow: 0 4px 20px rgba(0,0,0,.5); }
+    .measure-ov .prog { width: 70%; text-align: center; font-size: .82rem; font-weight: 700; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+    .measure-ov .prog .bar { height: 6px; border-radius: 6px; background: rgba(255,255,255,.25); margin-top: 10px; overflow: hidden; }
+    .measure-ov .prog .bar i { display: block; height: 100%; width: 0; background: var(--mint); transition: width .2s; }
+    .measure-ov .prog small { display: block; margin-top: 8px; color: #FFD27A; font-weight: 600; }
+    .ar-panel { flex-shrink: 0; padding: 12px 0 14px; }
+    .ar-sizes { display: flex; gap: 6px; padding: 0 14px; align-items: center; }
+    .ar-sizes .lbl { font-size: .72rem; color: rgba(255,255,255,.5); margin-right: 4px; font-weight: 600; }
+    .ar-chip { height: 32px; min-width: 44px; padding: 0 10px; border-radius: 10px; background: var(--dark-3); color: rgba(255,255,255,.8); font-size: .8rem; font-weight: 700; position: relative; }
+    .ar-chip.active { background: #fff; color: var(--ink); }
+    .ar-chip i { position: absolute; top: -7px; right: -4px; font-style: normal; font-size: .54rem; background: var(--mint); color: #fff; border-radius: 5px; padding: 1px 4px; }
+    .ar-rail { display: flex; gap: 8px; overflow-x: auto; padding: 12px 14px 12px; scrollbar-width: none; }
+    .ar-rail::-webkit-scrollbar { display: none; }
+    .ar-item { position: relative; width: 62px; height: 62px; flex-shrink: 0; border-radius: 14px; overflow: hidden; background: #fff; outline: 2px solid transparent; outline-offset: 2px; }
+    .ar-item img { width: 100%; height: 100%; object-fit: cover; }
+    .ar-item.on { outline-color: var(--mint); }
+    .ar-item .slot { position: absolute; left: 0; right: 0; bottom: 0; font-size: .56rem; font-weight: 800; background: rgba(0,0,0,.6); color: #fff; text-align: center; padding: 1px 0; }
+    .ar-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; padding: 0 14px; }
+    .ar-actions .btn { height: 46px; }
+    .btn.dark-line { background: var(--dark-3); color: #fff; }
+    .ar-panel.measure { max-height: 330px; overflow-y: auto; scrollbar-width: none; padding-top: 10px; }
+    .m-form { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding: 0 14px; }
+    .m-form label { display: grid; gap: 4px; font-size: .66rem; color: rgba(255,255,255,.55); font-weight: 600; }
+    .m-form input, .m-form select { height: 42px; border-radius: 10px; border: 0; background: var(--dark-3); color: #fff; padding: 0 10px; font-size: .92rem; font-weight: 700; outline: none; width: 100%; }
+    .m-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 14px 0; }
+    .m-actions .btn.mint { grid-column: 1 / -1; }
+    .m-note { font-size: .68rem; color: rgba(255,255,255,.45); padding: 10px 16px 0; line-height: 1.5; }
+    .m-result { margin: 12px 14px 0; background: #fff; color: var(--ink); border-radius: 18px; padding: 16px; }
+    .m-result .hd { display: flex; justify-content: space-between; align-items: flex-start; }
+    .m-result .hd small { color: var(--muted); font-size: .7rem; font-weight: 600; }
+    .m-result h4 { font-size: 1.1rem; font-weight: 850; margin-top: 3px; letter-spacing: -0.03em; }
+    .size-box { display: flex; gap: 6px; }
+    .size-box div { text-align: center; background: var(--mint-soft); color: var(--mint-ink); border-radius: 10px; padding: 5px 10px; font-size: .62rem; font-weight: 700; }
+    .size-box b { display: block; font-size: 1.05rem; font-weight: 900; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
+    .metrics div { background: #F4F4F2; border-radius: 10px; padding: 8px 9px; font-size: .64rem; color: var(--muted); font-weight: 600; }
+    .metrics b { display: block; color: var(--ink); font-size: .92rem; font-weight: 800; margin-top: 1px; }
+    .metrics b small { font-size: .62rem; color: var(--faint); font-weight: 600; margin-left: 2px; }
+    .metrics div.cam b::after { content: '•'; color: var(--mint); margin-left: 3px; }
+    .m-hint { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #FFF6E5; color: #8A5A00; font-size: .68rem; font-weight: 600; line-height: 1.45; }
+    .fit-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; }
+    .fit-tags span { font-size: .7rem; font-weight: 700; background: var(--ink); color: #fff; border-radius: 999px; padding: 4px 9px; }
+    .m-result .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+
+    /* ---------- 옷장 ---------- */
+    .worn-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 18px 0; }
+    .worn-slot { background: var(--surface); border-radius: 16px; padding: 10px; display: flex; gap: 10px; align-items: center; border: 1px solid var(--border); min-width: 0; }
+    .worn-slot .ph { width: 48px; height: 56px; border-radius: 10px; background: #EFEFED; overflow: hidden; flex-shrink: 0; display: grid; place-items: center; color: var(--faint); font-size: 1.1rem; }
+    .worn-slot .ph img { width: 100%; height: 100%; object-fit: cover; }
+    .worn-slot small { font-size: .66rem; color: var(--muted); font-weight: 700; }
+    .worn-slot div.t { min-width: 0; font-size: .78rem; font-weight: 700; line-height: 1.3; }
+    .worn-slot div.t span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .closet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 8px; padding: 0 18px; }
+    #closetRecWrap { padding-bottom: 110px; }
+    .c-card { text-align: left; min-width: 0; position: relative; }
+    .c-card .ph { position: relative; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: #EFEFED; outline: 2px solid transparent; outline-offset: -2px; }
+    .c-card .ph img { width: 100%; height: 100%; object-fit: cover; }
+    .c-card.sel .ph { outline-color: var(--ink); }
+    .c-card .nm { font-size: .72rem; margin-top: 6px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .c-card .sub { font-size: .64rem; color: var(--muted); margin-top: 1px; }
+    .c-card .worn { position: absolute; right: 6px; top: 6px; font-size: .58rem; font-weight: 800; background: var(--mint); color: #fff; border-radius: 5px; padding: 2px 5px; }
+    .c-card .check { position: absolute; left: 6px; top: 6px; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,.9); border: 1.5px solid #C8C8C8; }
+    .c-card.sel .check { background: var(--ink); border-color: var(--ink); }
+    .c-card.sel .check::after { content: ''; position: absolute; left: 6px; top: 3px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .dock { position: absolute; left: 0; right: 0; bottom: var(--tab-h); padding: 12px 16px 14px; background: linear-gradient(180deg, rgba(247,247,245,0), var(--bg) 30%); display: none; grid-template-columns: 1fr 1.2fr; gap: 8px; z-index: 6; }
+    .dock.show { display: grid; }
+
+    /* ---------- MY ---------- */
+    .profile { display: flex; align-items: center; gap: 14px; }
+    .profile .av { width: 58px; height: 58px; border-radius: 50%; background: var(--mint-soft); overflow: hidden; flex-shrink: 0; }
+    .profile .av img { width: 100%; height: 170%; object-fit: cover; object-position: center 0; }
+    .profile .nm { font-size: 1.1rem; font-weight: 850; }
+    .profile .lv { font-size: .76rem; color: var(--muted); margin-top: 2px; }
+    .nick-row { display: flex; gap: 8px; margin-top: 14px; }
+    .nick-row input { flex: 1; height: 40px; border-radius: 10px; border: 1px solid var(--border); padding: 0 12px; outline: none; background: #FAFAF9; min-width: 0; }
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; text-align: center; }
+    .stat-grid div { font-size: .68rem; color: var(--muted); font-weight: 600; }
+    .stat-grid b { display: block; font-size: 1.05rem; color: var(--ink); font-weight: 850; margin-bottom: 2px; }
+    .my-card { margin: 12px 16px 0; }
+    .my-card h4 { font-size: .92rem; font-weight: 800; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .my-card h4 .link { font-weight: 600; }
+    .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .kv div { background: #F6F6F4; border-radius: 10px; padding: 8px; font-size: .64rem; color: var(--muted); font-weight: 600; }
+    .kv b { display: block; font-size: .9rem; color: var(--ink); font-weight: 800; }
+    .learn-bar { height: 6px; border-radius: 6px; background: #EEE; overflow: hidden; margin: 8px 0 6px; }
+    .learn-bar i { display: block; height: 100%; background: var(--mint); }
+    .small-txt { font-size: .74rem; color: var(--muted); line-height: 1.5; }
+    .order-line { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+    .order-line:first-of-type { border-top: 0; }
+    .order-line .ph { width: 44px; height: 52px; border-radius: 8px; background: #EFEFED center/cover; flex-shrink: 0; }
+    .order-line .t { flex: 1; min-width: 0; font-size: .8rem; font-weight: 700; }
+    .order-line .t small { display: block; font-size: .68rem; color: var(--muted); font-weight: 500; margin-top: 2px; }
+    .order-line .p { font-size: .82rem; font-weight: 800; }
+    .menu-list { margin: 12px 16px 24px; background: var(--surface); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+    .menu-list button { width: 100%; height: 52px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; font-size: .88rem; font-weight: 600; border-top: 1px solid var(--line); text-align: left; }
+    .menu-list button:first-child { border-top: 0; }
+    .menu-list button.danger { color: var(--sale); }
+
+    /* ---------- 탭바 ---------- */
+    .tabbar { height: var(--tab-h); flex-shrink: 0; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); border-top: 1px solid var(--border); padding-bottom: 4px; z-index: 20; position: relative; }
+    .tab { display: grid; justify-items: center; align-content: center; gap: 3px; font-size: .64rem; font-weight: 650; color: var(--faint); }
+    .tab.active { color: var(--ink); }
+    .tab.active svg.i { stroke-width: 2.2; }
+    .tab.ar-tab { position: relative; color: var(--ink); }
+    .tab.ar-tab .orb { width: 52px; height: 52px; margin-top: -22px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; box-shadow: 0 6px 16px rgba(17,17,17,.28); border: 4px solid var(--surface); }
+    .tab.ar-tab.active .orb { background: var(--mint); }
+    .phone.dark .tabbar { background: var(--dark); border-top-color: var(--dark-3); }
+    .phone.dark .tab { color: rgba(255,255,255,.4); }
+    .phone.dark .tab.active, .phone.dark .tab.ar-tab { color: #fff; }
+    .phone.dark .tab.ar-tab .orb { border-color: var(--dark); }
+
+    /* ---------- 상품 상세 ---------- */
+    .pdp { position: absolute; inset: var(--status-h) 0 0 0; background: var(--surface); z-index: 50; display: none; flex-direction: column; }
+    .pdp.show { display: flex; animation: slideUp .22s ease-out; }
+    @keyframes slideUp { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+    .pdp-top { height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; }
+    .pdp-top strong { font-size: .95rem; font-weight: 700; }
+    .pdp-scroll { flex: 1; overflow-y: auto; scrollbar-width: none; }
+    .pdp-scroll::-webkit-scrollbar { display: none; }
+    .hero { position: relative; aspect-ratio: 1 / 1.08; background: #F2F2F0; }
+    .hero img { width: 100%; height: 100%; object-fit: contain; }
+    .hero-dots { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; gap: 5px; justify-content: center; }
+    .hero-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(0,0,0,.2); }
+    .hero-dots i.on { background: var(--ink); width: 16px; border-radius: 3px; }
+    .hero-ar { position: absolute; right: 12px; bottom: 12px; height: 34px; padding: 0 12px; border-radius: 999px; background: rgba(17,17,17,.86); color: #fff; font-size: .74rem; font-weight: 800; display: inline-flex; align-items: center; gap: 5px; }
+    .hero-ar svg.i { width: 16px; height: 16px; color: var(--mint); }
+    .pdp-head { padding: 18px 18px 6px; }
+    .pdp-head .br { font-size: .8rem; font-weight: 800; display: flex; justify-content: space-between; }
+    .pdp-head h3 { font-size: 1.12rem; font-weight: 600; margin-top: 5px; line-height: 1.4; letter-spacing: -0.02em; }
+    .pdp-head .rt { font-size: .76rem; color: var(--muted); margin-top: 6px; }
+    .pdp-head .rt b { color: var(--ink); }
+    .pdp-head .rt b::before { content: '★ '; color: var(--star); }
+    .pdp-price { margin-top: 12px; display: flex; align-items: baseline; gap: 6px; }
+    .pdp-price .rate { color: var(--sale); font-size: 1.3rem; font-weight: 900; }
+    .pdp-price .price { font-size: 1.3rem; font-weight: 900; }
+    .pdp-price .origin { color: var(--faint); font-size: .84rem; text-decoration: line-through; }
+    .coupon-line { margin-top: 6px; font-size: .74rem; color: var(--mint-ink); font-weight: 700; }
+    .fit-box { margin: 14px 18px 0; border-radius: 14px; background: var(--mint-soft); padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
+    .fit-box .score { font-size: 1.3rem; font-weight: 900; color: var(--mint-ink); }
+    .fit-box .t { flex: 1; font-size: .76rem; color: var(--ink-2); line-height: 1.45; }
+    .fit-box .t b { display: block; font-size: .84rem; color: var(--ink); }
+    .fit-box.cta { background: #F4F4F2; text-align: left; width: calc(100% - 36px); }
+    .pdp-sec { padding: 22px 18px 0; }
+    .pdp-sec h4 { font-size: .95rem; font-weight: 800; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; }
+    .pdp-sec h4 span { font-size: .74rem; color: var(--muted); font-weight: 600; }
+    .pdp-sec p { font-size: .84rem; color: var(--ink-2); line-height: 1.6; }
+    .size-row { display: flex; gap: 6px; }
+    .size-chip { flex: 1; height: 42px; border-radius: 10px; border: 1px solid #DADADA; background: #fff; font-weight: 700; font-size: .88rem; position: relative; }
+    .size-chip.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+    .size-chip .rec { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-size: .56rem; background: var(--mint); color: #fff; border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+    .size-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .74rem; text-align: center; }
+    .size-table th, .size-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); }
+    .size-table th { color: var(--muted); font-weight: 600; }
+    .size-table td.on { font-weight: 800; background: #F6F6F4; }
+    .info-grid { display: grid; grid-template-columns: 76px 1fr; gap: 8px 10px; font-size: .8rem; line-height: 1.5; }
+    .info-grid dt { color: var(--muted); }
+    .ai-sum { background: #F6F6F4; border-radius: 12px; padding: 12px; font-size: .78rem; line-height: 1.6; color: var(--ink-2); }
+    .ai-sum b { display: block; color: var(--ink); margin-bottom: 3px; }
+    .kw { display: inline-block; background: #fff; border-radius: 6px; padding: 1px 6px; margin: 0 2px; font-weight: 700; }
+    .fit-dist { display: grid; gap: 6px; margin: 12px 0 4px; }
+    .fit-dist div { display: grid; grid-template-columns: 52px 1fr 34px; gap: 8px; align-items: center; font-size: .72rem; color: var(--muted); }
+    .fit-dist .bar { height: 6px; border-radius: 6px; background: #EEE; overflow: hidden; }
+    .fit-dist .bar i { display: block; height: 100%; background: var(--ink); }
+    .review { padding: 12px 0; border-top: 1px solid var(--line); font-size: .8rem; line-height: 1.55; color: var(--ink-2); }
+    .review .rv-meta { font-size: .7rem; color: var(--muted); margin-bottom: 4px; }
+    .review .rv-meta b { color: var(--star); letter-spacing: -1px; margin-right: 4px; }
+    .match-card { display: flex; gap: 10px; align-items: center; background: #F6F6F4; border-radius: 14px; padding: 10px; }
+    .match-card img { width: 52px; height: 62px; border-radius: 8px; object-fit: cover; background: #fff; }
+    .match-card .mc-body { flex: 1; min-width: 0; font-size: .74rem; color: var(--muted); }
+    .match-card .mc-body b { display: block; color: var(--ink); font-size: .8rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pdp-foot { flex-shrink: 0; display: grid; grid-template-columns: 50px 1fr 1.3fr; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--border); background: #fff; }
+    .pdp-foot .wish { height: 50px; border-radius: 12px; border: 1px solid #DADADA; display: grid; place-items: center; }
+    .pdp-foot .wish.on { color: var(--sale); }
+    .pdp-foot .wish.on svg { fill: currentColor; }
+
+    /* ---------- 장바구니 시트 · 토스트 · 레벨업 ---------- */
+    .sheet-bg { position: absolute; inset: 0; background: rgba(0,0,0,.4); z-index: 60; display: none; align-items: flex-end; }
+    .sheet-bg.show { display: flex; }
+    .sheet { width: 100%; max-height: 80%; overflow-y: auto; background: #fff; border-radius: 22px 22px 0 0; padding: 10px 18px 18px; animation: slideUp .2s ease-out; }
+    .sheet-handle { width: 40px; height: 4px; border-radius: 2px; background: #DDD; margin: 0 auto 12px; }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .sheet-head h3 { font-size: 1.1rem; font-weight: 850; }
+    .cart-line { display: grid; grid-template-columns: 58px 1fr auto; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); align-items: start; }
+    .cart-swatch { width: 58px; height: 70px; border-radius: 10px; background: #EFEFED center/cover; }
+    .cart-line .nm { font-size: .82rem; font-weight: 600; line-height: 1.35; }
+    .cart-line .op { font-size: .72rem; color: var(--muted); margin-top: 3px; }
+    .qty { display: inline-flex; align-items: center; border: 1px solid #DDD; border-radius: 8px; margin-top: 8px; }
+    .qty button { width: 28px; height: 28px; font-weight: 700; }
+    .qty span { min-width: 22px; text-align: center; font-size: .8rem; font-weight: 700; }
+    .cart-line .price { font-size: .86rem; font-weight: 800; text-align: right; }
+    .cart-line .rm { font-size: .7rem; color: var(--muted); text-decoration: underline; display: block; padding: 8px 6px; margin: 0 -6px -8px auto; }
+    .cart-sum { display: grid; gap: 7px; margin: 14px 0; font-size: .82rem; color: var(--muted); }
+    .cart-sum div { display: flex; justify-content: space-between; }
+    .cart-sum .coupon { color: var(--mint-ink); font-weight: 700; }
+    .cart-total { display: flex; justify-content: space-between; font-weight: 850; font-size: 1.05rem; padding: 12px 0 14px; border-top: 1px solid var(--border); }
+    .pay-done { display: none; text-align: center; padding: 12px; font-size: .82rem; color: var(--muted); }
+    .pay-done strong { display: block; font-size: 1.05rem; color: var(--ink); margin-bottom: 4px; }
+    .toast { position: absolute; left: 50%; bottom: calc(var(--tab-h) + 18px); transform: translate(-50%, 10px); background: rgba(17,17,17,.92); color: #fff; font-size: .8rem; font-weight: 600; padding: 11px 16px; border-radius: 12px; opacity: 0; pointer-events: none; transition: .2s; z-index: 1200; max-width: 330px; text-align: center; line-height: 1.4; width: max-content; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .levelup { position: absolute; inset: 0; z-index: 1100; display: none; place-items: center; background: rgba(0,0,0,.45); }
+    .levelup.show { display: grid; }
+    .levelup-card { background: #fff; border-radius: 24px; padding: 26px 28px 22px; text-align: center; width: 270px; animation: pop .45s cubic-bezier(.3,1.6,.5,1); }
+    .levelup-card img { width: 90px; height: 120px; object-fit: contain; margin: 0 auto 8px; }
+    .levelup-card small { color: var(--mint-ink); font-weight: 800; font-size: .74rem; letter-spacing: .08em; }
+    .levelup-card strong { display: block; font-size: 1.5rem; font-weight: 900; margin: 4px 0; }
+    .levelup-card p { font-size: .8rem; color: var(--muted); margin-bottom: 14px; }
+    .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 1300; transition: opacity .25s; }
+    .flash.on { opacity: .85; transition: none; }
+  </style>
+</head>
+<body>
+  <div class="phone-shell" id="phoneShell">
+  <div class="phone" id="app">
+    <div class="status-bar"><span id="clock">9:41</span><span class="sig"><span>5G</span><i></i></span></div>
+    <main class="screens">
+
+      <!-- 홈: 룩키 키우기 -->
+      <section class="screen active" data-screen="home">
+        <div class="topbar">
+          <div class="wordmark">LOOK<b>FIT</b></div>
+          <button class="icon-btn js-cart" type="button" aria-label="장바구니"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 12.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></svg><span class="badge-dot js-cart-count" id="cartCount"></span></button>
+        </div>
+        <div class="stage" id="stage">
+          <div class="stage-meta">
+            <div><span class="tier-badge"><i id="homeLevel">Lv.1</i><span id="homeTitle">루키</span></span><small id="homeNick">스타일러님의 룩키</small></div>
+          </div>
+          <div class="bubble" id="homeBubble">안녕! 나는 <em>룩키</em>야</div>
+          <div class="worn-row" id="wornRow"></div>
+          <canvas id="avatarCanvas" aria-label="룩키 캐릭터"></canvas>
+          <div class="exp-row">
+            <div class="lbl"><span id="expLabel">EXP 0 / 100</span><b id="expNext">다음 칭호 · 스타일러</b></div>
+            <div class="exp-track"><div class="exp-fill" id="expFill"></div></div>
+          </div>
+        </div>
+        <div class="home-actions">
+          <button class="btn line" type="button" id="btnHomeCloset">옷 갈아입기</button>
+          <button class="btn line" type="button" id="btnHomeShot">착용샷 저장</button>
+          <button class="btn primary" type="button" id="btnHomeAR"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px;color:var(--mint)"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="9" r="2.2"/><path d="M8.5 17c.6-2.4 1.9-3.6 3.5-3.6s2.9 1.2 3.5 3.6"/></svg>AR로 입어보기</button>
+        </div>
+        <div class="grow-row" id="growRow"></div>
+        <button class="cta-card" type="button" id="homeMeasureCta">
+          <div class="t"><strong>30초 AR 체형 측정</strong><span>카메라로 어깨·가슴·허리를 재고 내 사이즈를 찾아요</span></div>
+          <span class="go"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M9 6l6 6-6 6"/></svg></span>
+        </button>
+        <div class="section-h pad"><h3 id="homeRecTitle">지금 인기 있는 상품</h3><button class="link" type="button" id="homeRecMore">전체보기</button></div>
+        <div class="rail" id="homeRecRail"></div>
+        <div style="height:26px"></div>
+      </section>
+
+      <!-- 탐색 -->
+      <section class="screen" data-screen="explore">
+        <div class="topbar">
+          <h2>탐색</h2>
+          <button class="icon-btn js-cart" type="button" aria-label="장바구니"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 12.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></svg><span class="badge-dot js-cart-count"></span></button>
+        </div>
+        <label class="search"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg><input id="searchInput" type="search" placeholder="브랜드, 상품명, 스타일 검색" autocomplete="off" /></label>
+        <div class="cat-tabs" id="catTabs"></div>
+        <div class="chip-row" id="chipRow"></div>
+        <div class="list-head"><span id="exploreCount">0개</span><select class="sort-select" id="sortSelect" aria-label="정렬"></select></div>
+        <div class="grid" id="exploreGrid"></div>
+      </section>
+
+      <!-- AR: 가상 시착 + 체형 측정 -->
+      <section class="screen ar" data-screen="ar">
+        <div class="ar-top">
+          <div class="seg" id="arSeg"><button type="button" data-view="tryon" class="active">가상 시착</button><button type="button" data-view="measure">체형 측정</button></div>
+          <div class="ar-engine"><b id="arEngine">AI 모델 준비 중</b><span id="arLearn">체형 학습 0프레임</span></div>
+        </div>
+        <div class="ar-stage">
+          <canvas id="arCanvas"></canvas>
+          <video id="arVideo" playsinline muted></video>
+          <div class="ar-src" id="arModes">
+            <button type="button" data-mode="camera"><svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>카메라</button>
+            <button type="button" data-mode="photo"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20 16l-5-5-8 8"/></svg>사진</button>
+            <button type="button" data-mode="sample"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="6" r="2.5"/><path d="M12 9v6M8 11l4-1 4 1M10 21l2-6 2 6"/></svg>샘플</button>
+          </div>
+          <input id="arPhotoInput" type="file" accept="image/*" hidden />
+          <div class="ar-guide" id="arGuide"><svg viewBox="0 0 100 220" fill="none" stroke="#fff" stroke-width="1.6" stroke-dasharray="4 4"><circle cx="50" cy="22" r="14"/><path d="M28 48h44l10 60-10 2-6-40v60l6 86H58l-8-70-8 70H28l6-86V70l-6 40-10-2z"/></svg></div>
+          <div class="measure-ov" id="measureOv"><div class="cd" id="measureCd"></div><div class="prog" id="measureProg"><span id="measureProgTxt">전신을 맞춰 주세요</span><div class="bar"><i id="measureBar"></i></div><small id="measureReject"></small></div></div>
+          <div class="ar-status" id="arStatus">준비 중…</div>
+        </div>
+        <div class="ar-panel" id="arTryPanel">
+          <div class="ar-sizes" id="arSizes"></div>
+          <div class="ar-rail" id="arRail"></div>
+          <div class="ar-actions">
+            <button type="button" class="btn dark-line" id="arCapture">착용샷 저장</button>
+            <button type="button" class="btn mint" id="arToCart">이 코디 장바구니 담기</button>
+          </div>
+        </div>
+        <div class="ar-panel measure" id="arMeasurePanel" hidden>
+          <div class="m-form">
+            <label>성별<select id="genderSelect"><option value="M">남성</option><option value="W">여성</option></select></label>
+            <label>키(cm)<input id="heightInput" type="number" inputmode="numeric" min="140" max="210" /></label>
+            <label>몸무게(kg)<input id="weightInput" type="number" inputmode="numeric" min="35" max="150" /></label>
+          </div>
+          <div class="m-actions">
+            <button type="button" class="btn mint" id="btnMeasureStart">카메라로 측정 시작 (3초 후)</button>
+            <button type="button" class="btn dark-line sm" id="btnMeasurePhoto">전신 사진으로 측정</button>
+            <button type="button" class="btn dark-line sm" id="btnMeasureInput">입력값으로만 추정</button>
+          </div>
+          <input id="measurePhotoInput" type="file" accept="image/*" hidden />
+          <p class="m-note">2~3m 떨어져 정면으로 서서 머리부터 발끝까지 화면에 담고, 팔은 몸에서 살짝 떼 주세요(A자 자세). 몸에 붙는 옷일수록 정확해요. 영상은 기기 밖으로 전송되지 않습니다.</p>
+          <div class="m-result" id="measureResult" hidden></div>
+          <div style="height:10px"></div>
+        </div>
+      </section>
+
+      <!-- 옷장 -->
+      <section class="screen" data-screen="closet">
+        <div class="topbar"><h2>옷장</h2><span class="muted" style="font-size:.78rem;padding-right:8px" id="closetSub"></span></div>
+        <div class="worn-slots" id="wornSlots"></div>
+        <div class="section-h pad"><h3>내 옷</h3><span id="ownedCount"></span></div>
+        <div class="closet-grid" id="closetOwned"></div>
+        <div id="closetRecWrap">
+          <div class="section-h pad" style="margin-top:0"><h3 id="closetRecTitle">추천 아이템</h3><span>탭해서 선택</span></div>
+          <div class="closet-grid" id="closetRec"></div>
+        </div>
+      </section>
+
+      <!-- MY -->
+      <section class="screen" data-screen="my">
+        <div class="topbar"><h2>MY</h2></div>
+        <div class="card my-card" style="margin-top:4px">
+          <div class="profile"><div class="av"><img src="./assets/char/looky.png" alt="" /></div><div><div class="nm" id="myNick">스타일러</div><div class="lv" id="myLevel">Lv.1 루키</div></div></div>
+          <div class="nick-row"><input id="nickInput" maxlength="12" placeholder="닉네임" /><button class="btn ghost sm" type="button" id="btnSaveNick">변경</button></div>
+          <div class="stat-grid"><div><b id="setLevel">1</b>레벨</div><div><b id="setOwned">0</b>보유</div><div><b id="setWish">0</b>찜</div><div><b id="setOrders">0</b>주문</div></div>
+        </div>
+        <div class="card my-card"><h4>내 체형 <button class="link" type="button" id="btnRemeasure">측정하기</button></h4><div id="myBody"></div></div>
+        <div class="card my-card"><h4>AR 인식 학습 <button class="link" type="button" id="btnLearnReset">초기화</button></h4><div id="myLearn"></div></div>
+        <div class="card my-card"><h4>주문 내역</h4><div id="orderList"></div></div>
+        <div id="myRecentWrap"><div class="section-h pad"><h3>최근 본 상품</h3></div><div class="rail" id="recentRail"></div></div>
+        <div id="myWishWrap"><div class="section-h pad"><h3>찜한 상품</h3></div><div class="rail" id="wishRail"></div></div>
+        <div class="menu-list">
+          <button type="button" id="btnClearCart">장바구니 비우기<span class="muted">›</span></button>
+          <button type="button" id="btnReset" class="danger">데이터 초기화<span>›</span></button>
+        </div>
+      </section>
+    </main>
+
+    <div class="dock" id="closetDock">
+      <button class="btn line" type="button" id="btnClosetAR">AR로 입어보기</button>
+      <button class="btn primary" type="button" id="btnWear">착용하기</button>
+    </div>
+
+    <nav class="tabbar" id="tabbar">
+      <button class="tab active" data-tab="home" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M4 11l8-6.5 8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/></svg>홈</button>
+      <button class="tab" data-tab="explore" type="button"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>탐색</button>
+      <button class="tab ar-tab" data-tab="ar" type="button"><span class="orb"><svg class="i" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="9" r="2.2"/><path d="M8.5 17c.6-2.4 1.9-3.6 3.5-3.6s2.9 1.2 3.5 3.6"/></svg></span>AR 시착</button>
+      <button class="tab" data-tab="closet" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 5a2 2 0 1 1 2 2c-1 0-2 .6-2 1.6V9l8 5.5a1.3 1.3 0 0 1-.8 2.5H4.8a1.3 1.3 0 0 1-.8-2.5L12 9"/></svg>옷장</button>
+      <button class="tab" data-tab="my" type="button"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/></svg>MY</button>
+    </nav>
+
+    <div class="pdp" id="productModal" role="dialog" aria-modal="true" aria-label="상품 상세">
+      <div class="pdp-top">
+        <button class="icon-btn" type="button" id="modalClose" aria-label="뒤로"><svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <strong id="pdpTitle">상품 정보</strong>
+        <button class="icon-btn js-cart" type="button" aria-label="장바구니"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 12.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></svg><span class="badge-dot js-cart-count" style="border-color:#fff"></span></button>
+      </div>
+      <div class="pdp-scroll" id="detailScroll">
+        <div class="hero">
+          <img id="modalImg" alt="" />
+          <div class="hero-dots" id="heroDots"></div>
+          <button type="button" class="hero-ar" id="btnHeroAR"><svg class="i" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="9" r="2.2"/><path d="M8.5 17c.6-2.4 1.9-3.6 3.5-3.6s2.9 1.2 3.5 3.6"/></svg>AR 시착 가능</button>
+        </div>
+        <div class="pdp-head">
+          <div class="br"><span id="modalBrand">-</span><button class="link" type="button" id="btnToCloset">내 옷장에 추가</button></div>
+          <h3 id="modalName">-</h3>
+          <div class="rt" id="modalRating"></div>
+          <div class="pdp-price"><span class="rate" id="modalRate"></span><span class="price" id="modalPrice">₩0</span><span class="origin" id="modalOrigin"></span></div>
+          <div class="coupon-line" id="modalCoupon"></div>
+        </div>
+        <div id="modalFit"></div>
+        <div class="pdp-sec"><h4>사이즈 <span id="sizeRec"></span></h4><div class="size-row" id="sizeRow"></div><table class="size-table" id="sizeTable"></table></div>
+        <div class="pdp-sec"><h4>상품 정보</h4><p id="modalDesc">-</p>
+          <dl class="info-grid" style="margin-top:12px"><dt>구분</dt><dd id="modalMeta">-</dd><dt>소재</dt><dd id="modalMaterial">-</dd><dt>모델</dt><dd id="modalModel">-</dd></dl>
+        </div>
+        <div class="pdp-sec"><h4>스타일 팁</h4><div class="ai-sum" id="modalExpert"></div></div>
+        <div class="pdp-sec"><h4>후기 <span id="reviewCount"></span></h4><div class="ai-sum" id="reviewSummary"></div><div class="fit-dist" id="fitDist"></div><div id="reviewList"></div></div>
+        <div class="pdp-sec" id="matchBlock"><h4>함께 입으면 좋은 코디</h4><div id="modalMatch"></div></div>
+        <div class="pdp-sec"><h4>비슷한 상품</h4></div>
+        <div class="rail" id="similarRail"></div>
+        <div style="height:24px"></div>
+      </div>
+      <div class="pdp-foot">
+        <button class="wish" type="button" id="btnToggleWish" aria-label="찜"><svg class="i" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg></button>
+        <button class="btn line" type="button" id="btnPdpAR">AR 시착</button>
+        <button class="btn primary" type="button" id="btnAddCart">장바구니 담기</button>
+      </div>
+    </div>
+
+    <div class="sheet-bg" id="cartSheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head"><h3>장바구니</h3><button class="icon-btn" id="cartClose" type="button" aria-label="닫기"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <div id="cartList"></div>
+        <div class="cart-sum" id="cartSum"></div>
+        <div class="cart-total"><span>결제 예정 금액</span><span id="cartTotal">₩0</span></div>
+        <button class="btn primary block" id="btnCheckout" type="button">결제하기 (시뮬레이션)</button>
+        <div class="pay-done" id="payDone"><strong>결제 완료</strong>실제 청구는 없어요 · 구매한 상품은 옷장에 담겼어요</div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <div class="levelup" id="levelup"><div class="levelup-card"><img src="./assets/char/looky.png" alt="" /><small>LEVEL UP</small><strong id="levelupText">Lv.2</strong><p id="levelupSub">룩키가 성장했어요</p><button class="btn primary block" type="button" id="levelupClose">좋아요</button></div></div>
+    <div class="flash" id="photoFlash"></div>
+  </div>
+  </div>
